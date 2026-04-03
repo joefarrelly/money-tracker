@@ -2,6 +2,10 @@
 
 Personal finance tracker. Upload Barclays and Chase PDF statements, track salaries, and see your monthly disposable income after recurring expenses.
 
+## Why I Built This
+
+I was managing my personal finances across three separate tools — a Google Sheet for salary records, a Python script (ScrapeBanks) for parsing bank statement PDFs, and manual calculations for figuring out disposable income. Every month I'd repeat the same process across all three. This app consolidates them into one place: upload a statement, see your transactions, and get an up-to-date disposable income figure automatically.
+
 ## Features
 
 - Upload bank statement PDFs (Barclays, Chase) — transactions parsed and deduplicated automatically
