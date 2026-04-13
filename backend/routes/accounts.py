@@ -1,22 +1,24 @@
-from flask import Blueprint, jsonify, request
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
 
-from database import db
+from database import get_db
 from models import Account
+from schemas import AccountOut, AccountUpdate
 
-bp = Blueprint("accounts", __name__)
-
-
-@bp.get("/")
-def list_accounts():
-    accounts = Account.query.order_by(Account.bank, Account.nickname).all()
-    return jsonify([a.to_dict() for a in accounts])
+router = APIRouter()
 
 
-@bp.patch("/<int:account_id>")
-def update_account(account_id):
-    a = Account.query.get_or_404(account_id)
-    data = request.get_json()
-    if "nickname" in data:
-        a.nickname = data["nickname"].strip()
-    db.session.commit()
-    return jsonify(a.to_dict())
+@router.get("/", response_model=list[AccountOut])
+def list_accounts(db: Session = Depends(get_db)):
+    return db.query(Account).order_by(Account.bank, Account.nickname).all()
+
+
+@router.patch("/{account_id}", response_model=AccountOut)
+def update_account(account_id: int, body: AccountUpdate, db: Session = Depends(get_db)):
+    account = db.get(Account, account_id)
+    if not account:
+        raise HTTPException(status_code=404, detail="Account not found")
+    account.nickname = body.nickname.strip()
+    db.commit()
+    db.refresh(account)
+    return account

@@ -8,39 +8,38 @@ Algorithm:
   3. Return candidates sorted by confidence (occurrence count × amount stability).
 """
 
+import re
 from collections import defaultdict
 from datetime import date
-import re
 
-from database import db
+from sqlalchemy.orm import Session
+
 from models import RecurringExpense, Transaction
 
 
 def _normalise_merchant(description: str) -> str:
     """Strip noise to get a stable merchant key."""
     s = description.upper()
-    # Remove common reference number patterns
     s = re.sub(r"\b\d{6,}\b", "", s)
     s = re.sub(r"[*#/\\]", " ", s)
     s = re.sub(r"\s+", " ", s).strip()
-    # Take first ~4 words as the key
     words = s.split()
     return " ".join(words[:4])
 
 
-def detect_recurring(min_occurrences: int = 3) -> list[dict]:
+def detect_recurring(db: Session, min_occurrences: int = 3) -> list[dict]:
     """
     Analyse all stored transactions and return a list of recurring expense candidates.
     Only considers outgoing transactions (amount < 0).
     """
     txns = (
-        Transaction.query.filter(Transaction.amount < 0)
+        db.query(Transaction)
+        .filter(Transaction.amount < 0)
         .order_by(Transaction.date)
         .all()
     )
 
-    # Group by merchant key
-    groups: dict[str, list[Transaction]] = defaultdict(list)
+    groups: dict[str, list] = defaultdict(list)
     for t in txns:
         key = _normalise_merchant(t.description)
         groups[key].append(t)
@@ -53,7 +52,6 @@ def detect_recurring(min_occurrences: int = 3) -> list[dict]:
         amounts = [abs(t.amount) for t in group]
         dates = [t.date for t in group]
 
-        # Check amount stability: std/mean < 0.2
         mean_amount = sum(amounts) / len(amounts)
         if mean_amount < 1:
             continue
@@ -62,10 +60,7 @@ def detect_recurring(min_occurrences: int = 3) -> list[dict]:
         if std / mean_amount > 0.20:
             continue
 
-        # Check monthly cadence: gaps between consecutive dates ~25-35 days
-        gaps = [
-            (dates[i + 1] - dates[i]).days for i in range(len(dates) - 1)
-        ]
+        gaps = [(dates[i + 1] - dates[i]).days for i in range(len(dates) - 1)]
         if not gaps:
             continue
         monthly_gaps = [g for g in gaps if 20 <= g <= 40]
@@ -78,7 +73,6 @@ def detect_recurring(min_occurrences: int = 3) -> list[dict]:
         else:
             continue
 
-        # Day of month (most common)
         days = [d.day for d in dates]
         day_of_month = max(set(days), key=days.count)
 
@@ -97,16 +91,16 @@ def detect_recurring(min_occurrences: int = 3) -> list[dict]:
     return candidates
 
 
-def sync_recurring_to_db() -> dict:
+def sync_recurring_to_db(db: Session) -> dict:
     """
     Run detection and upsert confirmed recurring expenses into the DB.
     Returns counts of created/updated/skipped.
     """
-    candidates = detect_recurring()
+    candidates = detect_recurring(db)
     created = updated = skipped = 0
 
     for c in candidates:
-        existing = RecurringExpense.query.filter_by(
+        existing = db.query(RecurringExpense).filter_by(
             merchant_pattern=c["merchant_pattern"]
         ).first()
 
@@ -119,16 +113,14 @@ def sync_recurring_to_db() -> dict:
             else:
                 skipped += 1
         else:
-            db.session.add(
-                RecurringExpense(
-                    merchant_pattern=c["merchant_pattern"],
-                    typical_amount=c["typical_amount"],
-                    frequency=c["frequency"],
-                    day_of_month=c["day_of_month"],
-                    is_confirmed=False,
-                )
-            )
+            db.add(RecurringExpense(
+                merchant_pattern=c["merchant_pattern"],
+                typical_amount=c["typical_amount"],
+                frequency=c["frequency"],
+                day_of_month=c["day_of_month"],
+                is_confirmed=False,
+            ))
             created += 1
 
-    db.session.commit()
+    db.commit()
     return {"created": created, "updated": updated, "skipped": skipped}

@@ -8,7 +8,7 @@ Personal finance tracker that consolidates:
 - Disposable income calculation (salary net − recurring costs)
 
 ## Stack
-- **Backend:** Flask + SQLAlchemy + SQLite (`backend/money_tracker.db`)
+- **Backend:** FastAPI + SQLAlchemy + SQLite (`backend/money_tracker.db`)
 - **Frontend:** React + TypeScript + Vite + Tailwind CSS
 
 ## Running Locally
@@ -20,7 +20,7 @@ python -m venv .venv
 pip install -r requirements.txt
 python app.py
 ```
-Runs on `http://localhost:5000`.
+Runs on `http://localhost:5000`. Interactive API docs at `http://localhost:5000/docs`.
 
 **Frontend** (from `frontend/`):
 ```bash
@@ -34,11 +34,11 @@ Runs on `http://localhost:5173`, proxies `/api` to the backend.
 ### Backend structure
 ```
 backend/
-  app.py            # Flask app factory, registers blueprints
-  models.py         # SQLAlchemy models
-  database.py       # DB init
-  config.py         # Config (DB path, upload folder)
-  routes/           # Blueprints: accounts, transactions, upload, salaries, categories, dashboard
+  app.py            # FastAPI app, registers routers, startup hook
+  models.py         # SQLAlchemy models (DeclarativeBase)
+  schemas.py        # Pydantic request/response models
+  database.py       # Engine, SessionLocal, get_db dependency, DB init + seeding
+  routes/           # APIRouters: accounts, transactions, upload, salaries, categories, dashboard
   parsers/          # PDF parsers: barclays.py, chase.py
   services/         # recurring.py (auto-detection), summary.py (disposable income)
 ```

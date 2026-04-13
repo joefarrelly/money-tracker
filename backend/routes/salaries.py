@@ -1,64 +1,50 @@
-from datetime import date
+from fastapi import APIRouter, Depends, HTTPException, Response
+from sqlalchemy.orm import Session
 
-from flask import Blueprint, jsonify, request
-
-from database import db
+from database import get_db
 from models import Salary
+from schemas import SalaryCreate, SalaryOut, SalaryUpdate
 
-bp = Blueprint("salaries", __name__)
-
-
-@bp.get("/")
-def list_salaries():
-    salaries = Salary.query.order_by(Salary.date.desc()).all()
-    return jsonify([s.to_dict() for s in salaries])
+router = APIRouter()
 
 
-@bp.post("/")
-def create_salary():
-    data = request.get_json()
-    try:
-        salary_date = date.fromisoformat(data["date"])
-    except (KeyError, ValueError):
-        return jsonify({"error": "valid date (YYYY-MM-DD) required"}), 400
+@router.get("/", response_model=list[SalaryOut])
+def list_salaries(db: Session = Depends(get_db)):
+    return db.query(Salary).order_by(Salary.date.desc()).all()
 
-    net = data.get("net_amount")
-    if net is None:
-        return jsonify({"error": "net_amount required"}), 400
 
+@router.post("/", response_model=SalaryOut, status_code=201)
+def create_salary(body: SalaryCreate, db: Session = Depends(get_db)):
     s = Salary(
-        date=salary_date,
-        net_amount=float(net),
-        gross_amount=float(data["gross_amount"]) if data.get("gross_amount") else None,
-        employer=data.get("employer", ""),
-        notes=data.get("notes", ""),
+        date=body.date,
+        net_amount=body.net_amount,
+        gross_amount=body.gross_amount,
+        employer=body.employer,
+        notes=body.notes,
     )
-    db.session.add(s)
-    db.session.commit()
-    return jsonify(s.to_dict()), 201
+    db.add(s)
+    db.commit()
+    db.refresh(s)
+    return s
 
 
-@bp.patch("/<int:salary_id>")
-def update_salary(salary_id):
-    s = Salary.query.get_or_404(salary_id)
-    data = request.get_json()
-    if "date" in data:
-        s.date = date.fromisoformat(data["date"])
-    if "net_amount" in data:
-        s.net_amount = float(data["net_amount"])
-    if "gross_amount" in data:
-        s.gross_amount = float(data["gross_amount"]) if data["gross_amount"] else None
-    if "employer" in data:
-        s.employer = data["employer"]
-    if "notes" in data:
-        s.notes = data["notes"]
-    db.session.commit()
-    return jsonify(s.to_dict())
+@router.patch("/{salary_id}", response_model=SalaryOut)
+def update_salary(salary_id: int, body: SalaryUpdate, db: Session = Depends(get_db)):
+    s = db.get(Salary, salary_id)
+    if not s:
+        raise HTTPException(status_code=404, detail="Salary not found")
+    for field, value in body.model_dump(exclude_unset=True).items():
+        setattr(s, field, value)
+    db.commit()
+    db.refresh(s)
+    return s
 
 
-@bp.delete("/<int:salary_id>")
-def delete_salary(salary_id):
-    s = Salary.query.get_or_404(salary_id)
-    db.session.delete(s)
-    db.session.commit()
-    return "", 204
+@router.delete("/{salary_id}", status_code=204)
+def delete_salary(salary_id: int, db: Session = Depends(get_db)):
+    s = db.get(Salary, salary_id)
+    if not s:
+        raise HTTPException(status_code=404, detail="Salary not found")
+    db.delete(s)
+    db.commit()
+    return Response(status_code=204)

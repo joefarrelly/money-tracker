@@ -1,35 +1,38 @@
 import os
+import tempfile
 
-from flask import Blueprint, current_app, jsonify, request
+from fastapi import APIRouter, Depends, Form, HTTPException, UploadFile
+from sqlalchemy.orm import Session
 from werkzeug.utils import secure_filename
 
-from database import db
+from database import get_db
 from models import Account, Transaction
 from parsers import barclays, chase
+from schemas import DetectBankResult, UploadResult
 
-bp = Blueprint("upload", __name__)
+router = APIRouter()
 
 ALLOWED_EXTENSIONS = {"pdf"}
+UPLOAD_FOLDER = os.path.join(os.path.abspath(os.path.dirname(__file__)), "..", "uploads")
 
 
 def _allowed(filename: str) -> bool:
     return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
 
 
-def _get_or_create_account(bank: str, account_number: str) -> Account:
-    acc = Account.query.filter_by(account_number=account_number).first()
+def _get_or_create_account(bank: str, account_number: str, db: Session) -> Account:
+    acc = db.query(Account).filter_by(account_number=account_number).first()
     if not acc:
         acc = Account(bank=bank, account_number=account_number)
-        db.session.add(acc)
-        db.session.flush()
+        db.add(acc)
+        db.flush()
     return acc
 
 
-def _persist_transactions(df, account_id: int, source_file: str) -> dict:
-    """Insert parsed DataFrame rows, skipping duplicates."""
+def _persist_transactions(df, account_id: int, source_file: str, db: Session) -> dict:
     added = skipped = 0
     for _, row in df.iterrows():
-        exists = Transaction.query.filter_by(
+        exists = db.query(Transaction).filter_by(
             account_id=account_id,
             date=row["date"].date(),
             description=row["description"],
@@ -40,74 +43,75 @@ def _persist_transactions(df, account_id: int, source_file: str) -> dict:
             skipped += 1
             continue
 
-        db.session.add(
-            Transaction(
-                account_id=account_id,
-                date=row["date"].date(),
-                description=str(row["description"]),
-                amount=round(float(row["amount"]), 2),
-                balance=round(float(row["balance"]), 2) if row["balance"] else None,
-                source_file=source_file,
-            )
-        )
+        db.add(Transaction(
+            account_id=account_id,
+            date=row["date"].date(),
+            description=str(row["description"]),
+            amount=round(float(row["amount"]), 2),
+            balance=round(float(row["balance"]), 2) if row["balance"] else None,
+            source_file=source_file,
+        ))
         added += 1
 
-    db.session.commit()
+    db.commit()
     return {"added": added, "skipped": skipped}
 
 
-@bp.post("/")
-def upload_statement():
-    if "file" not in request.files:
-        return jsonify({"error": "No file provided"}), 400
-
-    file = request.files["file"]
-    bank = request.form.get("bank", "").strip().lower()
-    account_number = request.form.get("account_number", "").strip()
-
+@router.post("/", response_model=UploadResult)
+async def upload_statement(
+    file: UploadFile,
+    bank: str = Form(...),
+    account_number: str = Form(...),
+    year: int | None = Form(None),
+    db: Session = Depends(get_db),
+):
     if not file.filename or not _allowed(file.filename):
-        return jsonify({"error": "Only PDF files are supported"}), 400
+        raise HTTPException(status_code=400, detail="Only PDF files are supported")
+
+    bank = bank.strip().lower()
+    account_number = account_number.strip()
 
     if not bank or not account_number:
-        return jsonify({"error": "bank and account_number are required"}), 400
+        raise HTTPException(status_code=400, detail="bank and account_number are required")
 
     filename = secure_filename(file.filename)
-    filepath = os.path.join(current_app.config["UPLOAD_FOLDER"], filename)
-    file.save(filepath)
+    os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+    filepath = os.path.join(UPLOAD_FOLDER, filename)
+
+    contents = await file.read()
+    with open(filepath, "wb") as f:
+        f.write(contents)
 
     try:
         if bank == "barclays":
-            year_param = request.form.get("year", type=int)
-            year = year_param or barclays.detect_year(filepath, filename)
-            df = barclays.parse(filepath, year)
+            detected_year = year or barclays.detect_year(filepath, filename)
+            df = barclays.parse(filepath, detected_year)
         elif bank == "chase":
             df = chase.parse(filepath)
         else:
-            return jsonify({"error": f"Unsupported bank: {bank}"}), 400
+            raise HTTPException(status_code=400, detail=f"Unsupported bank: {bank}")
 
-        account = _get_or_create_account(bank, account_number)
-        result = _persist_transactions(df, account.id, filename)
-        result["account"] = account.to_dict()
-        return jsonify(result), 200
+        account = _get_or_create_account(bank, account_number, db)
+        result = _persist_transactions(df, account.id, filename, db)
+        db.refresh(account)
+        return UploadResult(added=result["added"], skipped=result["skipped"], account=account)
 
+    except HTTPException:
+        raise
     except Exception as e:
-        db.session.rollback()
-        return jsonify({"error": str(e)}), 500
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
 
     finally:
         if os.path.exists(filepath):
             os.remove(filepath)
 
 
-@bp.get("/detect-bank")
-def detect_bank_endpoint():
-    """Accept a filename and return the detected bank (for UI pre-fill)."""
-    filename = request.args.get("filename", "")
-    filename_lower = filename.lower()
-
-    if "barclays" in filename_lower or filename_lower.startswith("statement"):
-        return jsonify({"bank": "barclays"})
-    if "chase" in filename_lower:
-        return jsonify({"bank": "chase"})
-
-    return jsonify({"bank": None})
+@router.get("/detect-bank", response_model=DetectBankResult)
+def detect_bank(filename: str = ""):
+    lower = filename.lower()
+    if "barclays" in lower or lower.startswith("statement"):
+        return DetectBankResult(bank="barclays")
+    if "chase" in lower:
+        return DetectBankResult(bank="chase")
+    return DetectBankResult(bank=None)

@@ -1,50 +1,50 @@
-from flask import Blueprint, jsonify, request
+from fastapi import APIRouter, Depends, HTTPException, Response
+from sqlalchemy.orm import Session
 
-from database import db
+from database import get_db
 from models import Category
+from schemas import CategoryCreate, CategoryOut, CategoryUpdate
 
-bp = Blueprint("categories", __name__)
-
-
-@bp.get("/")
-def list_categories():
-    cats = Category.query.order_by(Category.name).all()
-    return jsonify([c.to_dict() for c in cats])
+router = APIRouter()
 
 
-@bp.post("/")
-def create_category():
-    data = request.get_json()
-    name = data.get("name", "").strip()
-    if not name:
-        return jsonify({"error": "name required"}), 400
-
-    if Category.query.filter_by(name=name).first():
-        return jsonify({"error": "Category already exists"}), 409
-
-    cat = Category(name=name, color=data.get("color", "#6b7280"), icon=data.get("icon"))
-    db.session.add(cat)
-    db.session.commit()
-    return jsonify(cat.to_dict()), 201
+@router.get("/", response_model=list[CategoryOut])
+def list_categories(db: Session = Depends(get_db)):
+    return db.query(Category).order_by(Category.name).all()
 
 
-@bp.patch("/<int:cat_id>")
-def update_category(cat_id):
-    cat = Category.query.get_or_404(cat_id)
-    data = request.get_json()
-    if "name" in data:
-        cat.name = data["name"]
-    if "color" in data:
-        cat.color = data["color"]
-    if "icon" in data:
-        cat.icon = data["icon"]
-    db.session.commit()
-    return jsonify(cat.to_dict())
+@router.post("/", response_model=CategoryOut, status_code=201)
+def create_category(body: CategoryCreate, db: Session = Depends(get_db)):
+    if db.query(Category).filter_by(name=body.name).first():
+        raise HTTPException(status_code=409, detail="Category already exists")
+    cat = Category(name=body.name.strip(), color=body.color, icon=body.icon)
+    db.add(cat)
+    db.commit()
+    db.refresh(cat)
+    return cat
 
 
-@bp.delete("/<int:cat_id>")
-def delete_category(cat_id):
-    cat = Category.query.get_or_404(cat_id)
-    db.session.delete(cat)
-    db.session.commit()
-    return "", 204
+@router.patch("/{cat_id}", response_model=CategoryOut)
+def update_category(cat_id: int, body: CategoryUpdate, db: Session = Depends(get_db)):
+    cat = db.get(Category, cat_id)
+    if not cat:
+        raise HTTPException(status_code=404, detail="Category not found")
+    if body.name is not None:
+        cat.name = body.name
+    if body.color is not None:
+        cat.color = body.color
+    if body.icon is not None:
+        cat.icon = body.icon
+    db.commit()
+    db.refresh(cat)
+    return cat
+
+
+@router.delete("/{cat_id}", status_code=204)
+def delete_category(cat_id: int, db: Session = Depends(get_db)):
+    cat = db.get(Category, cat_id)
+    if not cat:
+        raise HTTPException(status_code=404, detail="Category not found")
+    db.delete(cat)
+    db.commit()
+    return Response(status_code=204)
