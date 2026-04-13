@@ -5,12 +5,18 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
     headers: { "Content-Type": "application/json", ...options?.headers },
     ...options,
   });
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new Error(body.error ?? `HTTP ${res.status}`);
-  }
   if (res.status === 204) return undefined as T;
-  return res.json();
+  const text = await res.text();
+  if (!res.ok) {
+    try {
+      const body = JSON.parse(text);
+      throw new Error(body.detail ?? body.error ?? `HTTP ${res.status}`);
+    } catch (e) {
+      if (e instanceof Error && e.message !== text) throw e;
+      throw new Error(`HTTP ${res.status}: ${text.slice(0, 120)}`);
+    }
+  }
+  return JSON.parse(text) as T;
 }
 
 // Transactions
@@ -88,3 +94,33 @@ export const uploadStatement = (formData: FormData) =>
     if (!r.ok) return r.json().then((e) => Promise.reject(new Error(e.error)));
     return r.json();
   });
+
+export const previewUpload = (file: File) => {
+  const fd = new FormData();
+  fd.append("file", file);
+  return fetch(`${BASE}/upload/preview`, { method: "POST", body: fd }).then(async (r) => {
+    const text = await r.text();
+    if (!r.ok) {
+      try {
+        const e = JSON.parse(text);
+        return Promise.reject(new Error(e.detail ?? e.error ?? `HTTP ${r.status}`));
+      } catch {
+        return Promise.reject(new Error(`Server error (${r.status}): ${text.slice(0, 120)}`));
+      }
+    }
+    try {
+      return JSON.parse(text) as import("../types").PreviewResponse;
+    } catch {
+      return Promise.reject(new Error(`Unexpected response from server: ${text.slice(0, 120)}`));
+    }
+  });
+};
+
+export const confirmUpload = (body: object) =>
+  request<{ added: number; skipped: number; account: import("../types").Account }>(
+    "/upload/confirm",
+    { method: "POST", body: JSON.stringify(body) }
+  );
+
+export const getFormats = () =>
+  request<import("../types").StatementFormat[]>("/upload/formats");

@@ -1,5 +1,5 @@
 from datetime import date, datetime
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -151,7 +151,68 @@ class UploadResult(BaseModel):
     added: int
     skipped: int
     account: AccountOut
+    transactions: list[TransactionOut] = []
 
 
 class DetectBankResult(BaseModel):
     bank: Optional[str] = None
+
+
+# ── Statement formats ─────────────────────────────────────────────────────────
+
+class StatementFormatOut(BaseModel):
+    id: int
+    name: str
+    column_headers: list[str]
+    date_col: Optional[int] = None
+    description_col: Optional[int] = None
+    date_description_col: Optional[int] = None
+    balance_col: Optional[int] = None
+    amount_style: str
+    amount_col: Optional[int] = None
+    money_in_col: Optional[int] = None
+    money_out_col: Optional[int] = None
+    date_format: str
+    year_source: str
+    is_builtin: bool
+    use_count: int
+
+    model_config = {"from_attributes": True}
+
+
+class ColumnMapping(BaseModel):
+    date_col: Optional[int] = None
+    description_col: Optional[int] = None
+    date_description_col: Optional[int] = None  # merged date+description column
+    balance_col: Optional[int] = None
+    amount_style: Literal["signed", "split"] = "signed"
+    amount_col: Optional[int] = None
+    money_in_col: Optional[int] = None
+    money_out_col: Optional[int] = None
+    date_format: str = "%d %b %Y"
+    year_source: Literal["inline", "detect", "manual"] = "inline"
+
+
+class PreviewResponse(BaseModel):
+    preview_token: str
+    matched_format: Optional[StatementFormatOut] = None
+    confidence: float
+    column_headers: list[str]
+    proposed_mapping: ColumnMapping
+    detected_account_number: Optional[str] = None
+    detected_year: Optional[int] = None
+    needs_year: bool
+    sample_rows: list[list[str]]
+    total_rows: int
+
+
+class ConfirmUploadRequest(BaseModel):
+    preview_token: str
+    account_number: str
+    mapping: ColumnMapping
+    column_headers: list[str] = []  # raw headers from preview, needed if saving format
+    year: Optional[int] = None
+    skip_patterns: list[str] = []   # description substrings to exclude (e.g. "Opening balance")
+    save_format: bool = False
+    format_name: Optional[str] = None
+    format_id: Optional[int] = None  # reference existing format to bump use_count

@@ -80,3 +80,57 @@ export interface PaginatedTransactions {
   pages: number;
   per_page: number;
 }
+
+export interface StatementFormat {
+  id: number;
+  name: string;
+  column_headers: string[];
+  date_col: number | null;
+  description_col: number | null;
+  date_description_col: number | null;
+  balance_col: number | null;
+  amount_style: "signed" | "split";
+  amount_col: number | null;
+  money_in_col: number | null;
+  money_out_col: number | null;
+  date_format: string;
+  year_source: "inline" | "detect" | "manual";
+  is_builtin: boolean;
+  use_count: number;
+}
+
+export type ColumnRole =
+  | "date"
+  | "description"
+  | "date_description"
+  | "money_in"
+  | "money_out"
+  | "amount"
+  | "balance"
+  | "ignore";
+
+export interface ColumnMapping {
+  date_col: number | null;
+  description_col: number | null;
+  date_description_col: number | null;
+  balance_col: number | null;
+  amount_style: "signed" | "split";
+  amount_col: number | null;
+  money_in_col: number | null;
+  money_out_col: number | null;
+  date_format: string;
+  year_source: "inline" | "detect" | "manual";
+}
+
+export interface PreviewResponse {
+  preview_token: string;
+  matched_format: StatementFormat | null;
+  confidence: number;
+  column_headers: string[];
+  proposed_mapping: ColumnMapping;
+  detected_account_number: string | null;
+  detected_year: number | null;
+  needs_year: boolean;
+  sample_rows: string[][];
+  total_rows: number;
+}

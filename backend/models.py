@@ -1,5 +1,5 @@
 from datetime import datetime, date as date_type
-from sqlalchemy import Boolean, Column, Date, DateTime, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, Column, Date, DateTime, Float, ForeignKey, Integer, JSON, String, Text
 from sqlalchemy.orm import relationship
 
 from database import Base
@@ -78,4 +78,40 @@ class Salary(Base):
     net_amount = Column(Float, nullable=False)
     employer = Column(String(255))
     notes = Column(Text)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class StatementFormat(Base):
+    """
+    Saved column mapping for a bank statement format.
+    Built-in entries seed Barclays and Chase; users can save their own.
+    """
+    __tablename__ = "statement_formats"
+
+    id = Column(Integer, primary_key=True)
+    name = Column(String(100), nullable=False)
+
+    # Raw column header strings as they appear in the PDF (used for auto-matching)
+    column_headers = Column(JSON, nullable=False)
+
+    # Column indices (0-based) for each role
+    date_col = Column(Integer, nullable=False)
+    description_col = Column(Integer, nullable=False)
+    balance_col = Column(Integer, nullable=True)
+
+    # "split" = separate money_in / money_out columns (e.g. Barclays)
+    # "signed" = single amount column with +/- prefix (e.g. Chase)
+    amount_style = Column(String(10), nullable=False)
+    amount_col = Column(Integer, nullable=True)           # for "signed"
+    money_in_col = Column(Integer, nullable=True)         # for "split"
+    money_out_col = Column(Integer, nullable=True)        # for "split"
+    date_description_col = Column(Integer, nullable=True) # merged date+description column
+
+    # Date parsing
+    date_format = Column(String(30), nullable=False)          # e.g. "%d %b" or "%d %b %Y"
+    year_source = Column(String(20), nullable=False, default="inline")  # "inline"|"detect"|"manual"
+
+    is_builtin = Column(Boolean, default=False)
+    use_count = Column(Integer, default=0)
+    last_used_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)

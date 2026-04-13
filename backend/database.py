@@ -26,7 +26,72 @@ def get_db():
 def init_db():
     import models  # noqa: F401 — registers all models before create_all
     Base.metadata.create_all(bind=engine)
+    _migrate()
     _seed_default_categories()
+    _seed_builtin_formats()
+
+
+def _migrate():
+    """Add columns that exist in the model but are missing from the live DB."""
+    migrations = [
+        ("statement_formats", "date_description_col", "INTEGER"),
+    ]
+    with engine.connect() as conn:
+        for table, column, col_type in migrations:
+            rows = conn.execute(
+                __import__("sqlalchemy").text(f"PRAGMA table_info({table})")
+            ).fetchall()
+            existing = {r[1] for r in rows}
+            if column not in existing:
+                conn.execute(
+                    __import__("sqlalchemy").text(
+                        f"ALTER TABLE {table} ADD COLUMN {column} {col_type}"
+                    )
+                )
+                conn.commit()
+
+
+def _seed_builtin_formats():
+    from models import StatementFormat
+
+    db = SessionLocal()
+    try:
+        builtin = [
+            {
+                "name": "Barclays",
+                "column_headers": ["Date", "Description", "Money out", "Money in", "Balance"],
+                "date_col": 0,
+                "description_col": 1,
+                "money_out_col": 2,
+                "money_in_col": 3,
+                "balance_col": 4,
+                "amount_col": None,
+                "amount_style": "split",
+                "date_format": "%d %b",
+                "year_source": "detect",
+                "is_builtin": True,
+            },
+            {
+                "name": "Chase",
+                "column_headers": ["Date", "Transaction details", "Amount", "Balance"],
+                "date_col": 0,
+                "description_col": 1,
+                "amount_col": 2,
+                "money_in_col": None,
+                "money_out_col": None,
+                "balance_col": 3,
+                "amount_style": "signed",
+                "date_format": "%d %b %Y",
+                "year_source": "inline",
+                "is_builtin": True,
+            },
+        ]
+        for fmt_data in builtin:
+            if not db.query(StatementFormat).filter_by(name=fmt_data["name"], is_builtin=True).first():
+                db.add(StatementFormat(**fmt_data))
+        db.commit()
+    finally:
+        db.close()
 
 
 def _seed_default_categories():
