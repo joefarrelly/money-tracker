@@ -104,6 +104,7 @@ export interface BulkFileResult {
   added: number;
   skipped: number;
   error: string | null;
+  note: string | null;
 }
 
 export interface BulkUploadResult {

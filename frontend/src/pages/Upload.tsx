@@ -92,7 +92,7 @@ function formatToRoleMap(fmt: StatementFormat): Record<number, ColumnRole> {
 
 // ── Bulk upload component ─────────────────────────────────────────────────────
 
-function BulkUpload({ formats }: { formats: StatementFormat[] }) {
+function BulkUpload({ formats, onSwitchToSingle }: { formats: StatementFormat[]; onSwitchToSingle: () => void }) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [formatId, setFormatId]           = useState<number | "">("");
@@ -173,13 +173,21 @@ function BulkUpload({ formats }: { formats: StatementFormat[] }) {
                   <td className="px-4 py-2">
                     <span className="text-gray-300">{r.filename}</span>
                     {r.error && <p className="text-red-400 text-xs mt-0.5">{r.error}</p>}
+                    {r.note && <p className="text-yellow-600 text-xs mt-0.5">{r.note}</p>}
                   </td>
                   <td className="px-4 py-2 text-right tabular-nums text-green-400">{r.error ? "—" : r.added}</td>
                   <td className="px-4 py-2 text-right tabular-nums text-gray-500">{r.error ? "—" : r.skipped}</td>
                   <td className="px-4 py-2 text-right">
-                    {r.error
-                      ? <span className="text-red-400 text-xs">Error</span>
-                      : <span className="text-green-400 text-xs">OK</span>}
+                    {r.error ? (
+                      <button
+                        onClick={onSwitchToSingle}
+                        className="text-indigo-400 hover:text-indigo-300 text-xs underline underline-offset-2"
+                      >
+                        Try single
+                      </button>
+                    ) : (
+                      <span className="text-green-400 text-xs">OK</span>
+                    )}
                   </td>
                 </tr>
               ))}
@@ -641,7 +649,7 @@ export default function Upload() {
       </div>
 
       {tab === "bulk" ? (
-        <BulkUpload formats={formats} />
+        <BulkUpload formats={formats} onSwitchToSingle={() => setTab("single")} />
       ) : (
         <div className="bg-gray-900 rounded-xl border border-gray-800 p-8 flex flex-col items-center gap-4 text-center">
           <div className="w-12 h-12 rounded-full bg-gray-800 flex items-center justify-center text-xl">

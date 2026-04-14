@@ -223,6 +223,7 @@ async def bulk_upload(
     parsed_year = year if fmt.year_source == "manual" else None
     patterns = [p.strip() for p in skip_patterns.split(",") if p.strip()]
     account = _get_or_create_account(fmt.name.lower(), account_number, db)
+    saved_formats = db.query(StatementFormat).all()
 
     _ensure_dirs()
     results: list[BulkFileResult] = []
@@ -241,12 +242,26 @@ async def bulk_upload(
                 f.write(contents)
 
             df = universal.parse_with_mapping(tmp_path, mapping_dict, year=parsed_year, skip_patterns=patterns)
+            note = None
+
             if df.empty:
-                results.append(BulkFileResult(filename=filename, error="No transactions found"))
+                # Fallback: auto-detect the mapping for this specific file and retry
+                try:
+                    preview_data = universal.extract_preview(tmp_path, filename=filename, saved_formats=saved_formats)
+                    auto_mapping = preview_data["proposed_mapping"]
+                    auto_year = preview_data.get("detected_year") if preview_data.get("needs_year") else None
+                    df = universal.parse_with_mapping(tmp_path, auto_mapping, year=auto_year, skip_patterns=patterns)
+                    if not df.empty:
+                        note = "Used auto-detected mapping (stored format gave no results)"
+                except Exception:
+                    pass
+
+            if df.empty:
+                results.append(BulkFileResult(filename=filename, error="No transactions found — try uploading individually via Single tab"))
                 continue
 
             counts = _persist_transactions(df, account.id, token, db)
-            results.append(BulkFileResult(filename=filename, added=counts["added"], skipped=counts["skipped"]))
+            results.append(BulkFileResult(filename=filename, added=counts["added"], skipped=counts["skipped"], note=note))
         except Exception as e:
             results.append(BulkFileResult(filename=filename, error=str(e)))
         finally:

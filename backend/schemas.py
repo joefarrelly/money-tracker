@@ -223,6 +223,7 @@ class BulkFileResult(BaseModel):
     added: int = 0
     skipped: int = 0
     error: Optional[str] = None
+    note: Optional[str] = None  # e.g. "Used auto-detected mapping"
 
 
 class BulkUploadResult(BaseModel):
