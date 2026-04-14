@@ -39,6 +39,9 @@ def _migrate():
         ("statement_formats", "date_description_col", "INTEGER"),
         ("salaries", "source_file", "VARCHAR(255)"),
         ("salaries", "ni_number", "VARCHAR(20)"),
+        ("transactions", "is_transfer", "BOOLEAN DEFAULT 0"),
+        ("transactions", "transfer_counterpart_id", "INTEGER"),
+        ("transactions", "transfer_ignored", "BOOLEAN DEFAULT 0"),
     ]
     with engine.connect() as conn:
         for table, column, col_type in migrations:

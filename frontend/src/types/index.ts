@@ -24,8 +24,33 @@ export interface Transaction {
   category_id: number | null;
   category: Category | null;
   is_recurring: boolean;
+  is_transfer: boolean;
+  transfer_counterpart_id: number | null;
+  transfer_ignored: boolean;
   source_file: string | null;
   created_at: string;
+}
+
+export interface TransferTxn {
+  id: number;
+  date: string;
+  description: string;
+  amount: number;
+  account_id: number;
+  account_name: string;
+}
+
+export interface TransferCandidate {
+  txn_out: TransferTxn;
+  txn_in: TransferTxn;
+  day_diff: number;
+  confidence: number;
+}
+
+export interface ConfirmedTransfer {
+  primary_id: number;
+  txn_out: TransferTxn | null;
+  txn_in: TransferTxn | null;
 }
 
 export interface RecurringExpense {

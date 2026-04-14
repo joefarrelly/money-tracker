@@ -40,6 +40,9 @@ class Transaction(Base):
     balance = Column(Float)
     category_id = Column(Integer, ForeignKey("categories.id"), nullable=True)
     is_recurring = Column(Boolean, default=False)
+    is_transfer = Column(Boolean, default=False)
+    transfer_counterpart_id = Column(Integer, ForeignKey("transactions.id"), nullable=True)
+    transfer_ignored = Column(Boolean, default=False)
     source_file = Column(String(255))
     created_at = Column(DateTime, default=datetime.utcnow)
 

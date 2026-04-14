@@ -26,8 +26,8 @@ def monthly_summary(db: Session, year: int, month: int) -> dict:
         Transaction.date <= end,
     ).all()
 
-    total_in = sum(t.amount for t in txns if t.amount > 0)
-    total_out = abs(sum(t.amount for t in txns if t.amount < 0))
+    total_in = sum(t.amount for t in txns if t.amount > 0 and not t.is_transfer)
+    total_out = abs(sum(t.amount for t in txns if t.amount < 0 and not t.is_transfer))
 
     salary_rows = db.query(Salary).filter(
         Salary.date >= start,
@@ -40,7 +40,7 @@ def monthly_summary(db: Session, year: int, month: int) -> dict:
 
     cat_breakdown = {}
     for t in txns:
-        if t.amount >= 0:
+        if t.amount >= 0 or t.is_transfer:
             continue
         cat_name = t.category.name if t.category else "Uncategorised"
         cat_color = t.category.color if t.category else "#6b7280"

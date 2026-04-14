@@ -2,6 +2,7 @@ import { Routes, Route, NavLink } from "react-router-dom";
 import Dashboard from "./pages/Dashboard";
 import Transactions from "./pages/Transactions";
 import Recurring from "./pages/Recurring";
+import Transfers from "./pages/Transfers";
 import Salaries from "./pages/Salaries";
 import Upload from "./pages/Upload";
 import Settings from "./pages/Settings";
@@ -10,6 +11,7 @@ const navItems = [
   { to: "/", label: "Dashboard" },
   { to: "/transactions", label: "Transactions" },
   { to: "/recurring", label: "Recurring" },
+  { to: "/transfers", label: "Transfers" },
   { to: "/salaries", label: "Salaries" },
   { to: "/upload", label: "Upload" },
   { to: "/settings", label: "Settings" },
@@ -41,6 +43,7 @@ export default function App() {
           <Route path="/" element={<Dashboard />} />
           <Route path="/transactions" element={<Transactions />} />
           <Route path="/recurring" element={<Recurring />} />
+          <Route path="/transfers" element={<Transfers />} />
           <Route path="/salaries" element={<Salaries />} />
           <Route path="/upload" element={<Upload />} />
           <Route path="/settings" element={<Settings />} />

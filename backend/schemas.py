@@ -62,6 +62,9 @@ class TransactionOut(BaseModel):
     category_id: Optional[int] = None
     category: Optional[CategoryOut] = None
     is_recurring: bool
+    is_transfer: bool = False
+    transfer_counterpart_id: Optional[int] = None
+    transfer_ignored: bool = False
     source_file: Optional[str] = None
     created_at: datetime
 

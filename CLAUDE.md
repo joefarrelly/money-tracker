@@ -39,18 +39,19 @@ backend/
   models.py         # SQLAlchemy models (DeclarativeBase)
   schemas.py        # Pydantic request/response models
   database.py       # Engine, SessionLocal, get_db dependency, DB init + seeding
-  routes/           # APIRouters: accounts, transactions, upload, salaries, categories, dashboard, settings
+  routes/           # APIRouters: accounts, transactions, upload, salaries, categories, dashboard, settings, transfers
   parsers/
     universal.py    # Universal PDF parser: table extraction, column-role heuristics,
                     #   format matching, preview + confirm flow (replaces barclays.py/chase.py)
     payslip.py      # Payslip PDF parser: handles 3 table layouts, extracts line items + NI number
-  services/         # recurring.py (auto-detection), summary.py (monthly summary + disposable income)
+  services/         # recurring.py (auto-detection), summary.py (monthly summary + disposable income),
+                    #   transfers.py (transfer candidate detection)
 ```
 
 ### Frontend structure
 ```
 frontend/src/
-  pages/            # Dashboard, Transactions, Upload, Recurring, Salaries, Settings
+  pages/            # Dashboard, Transactions, Upload, Recurring, Salaries, Settings, Transfers
   api/client.ts     # Axios wrapper for all API calls
   types/index.ts    # Shared TypeScript types
 ```
@@ -62,6 +63,7 @@ frontend/src/
 - Disposable income = net salary − sum of active recurring expense monthly costs.
 - Payslip duplicate detection: `(date, ni_number)` at app level + partial unique DB index `WHERE ni_number IS NOT NULL`. Manual entries fall back to `(date, employer)`.
 - NI number is the per-person identity key for payslips (supports multiple people, e.g. partners). Mapped to display names via `PersonIdentity` in Settings.
+- Transfer detection: transactions flagged `is_transfer=True` are excluded from monthly totals and category breakdowns so they don't inflate income/spending.
 
 ## PDF Parsing
 The upload flow is a two-step preview → confirm pattern:
@@ -97,3 +99,15 @@ Accounts already have nickname support via `PATCH /api/accounts/{id}`.
 `GET /api/dashboard/trend?months=N` returns N months of `MonthlySummary` (without `recurring_actuals`/`line_items` for performance).
 
 Currency values are formatted to 2 decimal places throughout the frontend (`toLocaleString` with `minimumFractionDigits: 2`).
+
+## Transfer Detection
+`services/transfers.py` scans all unreviewed transactions for candidate account-to-account transfers: negative on one account paired with a positive of the same amount (±£0.02) on a different account within ±2 days. Confidence score: 1.0 for same-day exact match, reduced by 0.15/day and proportional amount delta.
+
+`routes/transfers.py` exposes:
+- `GET /api/transfers/candidates` — unreviewed candidate pairs, sorted by confidence
+- `POST /api/transfers/confirm` — marks both sides `is_transfer=True`, links them via `transfer_counterpart_id`
+- `POST /api/transfers/ignore` — sets `transfer_ignored=True` on a transaction (hides it from candidates)
+- `POST /api/transfers/unlink/{txn_id}` — clears transfer flags on both sides of a confirmed pair
+- `GET /api/transfers/confirmed` — confirmed pairs, deduplicated, normalised so `txn_out` is always the negative side
+
+Transaction model has three new fields: `is_transfer`, `transfer_counterpart_id`, `transfer_ignored`. Added via `_migrate()` in `database.py`.

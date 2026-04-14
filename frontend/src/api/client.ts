@@ -132,6 +132,28 @@ export const patchRecurring = (id: number, data: object) =>
     body: JSON.stringify(data),
   });
 
+// Transfers
+export const getTransferCandidates = () =>
+  request<import("../types").TransferCandidate[]>("/transfers/candidates");
+
+export const getConfirmedTransfers = () =>
+  request<import("../types").ConfirmedTransfer[]>("/transfers/confirmed");
+
+export const confirmTransfer = (txn_out_id: number, txn_in_id: number) =>
+  request<{ ok: boolean }>("/transfers/confirm", {
+    method: "POST",
+    body: JSON.stringify({ txn_out_id, txn_in_id }),
+  });
+
+export const ignoreTransfer = (txn_id: number) =>
+  request<{ ok: boolean }>("/transfers/ignore", {
+    method: "POST",
+    body: JSON.stringify({ txn_id }),
+  });
+
+export const unlinkTransfer = (txn_id: number) =>
+  request<{ ok: boolean }>(`/transfers/unlink/${txn_id}`, { method: "POST" });
+
 // Accounts
 export const getAccounts = () =>
   request<import("../types").Account[]>("/accounts/");
