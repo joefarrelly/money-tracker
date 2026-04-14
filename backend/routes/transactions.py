@@ -1,85 +1,95 @@
-from flask import Blueprint, jsonify, request
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import extract
+from sqlalchemy.orm import Session
 
-from database import db
+from database import get_db
 from models import Category, Transaction
+from schemas import (
+    BulkCategoriseRequest,
+    BulkCategoriseResponse,
+    TransactionOut,
+    TransactionPage,
+    TransactionUpdate,
+)
 
-bp = Blueprint("transactions", __name__)
+router = APIRouter()
 
 
-@bp.get("/")
-def list_transactions():
-    page = request.args.get("page", 1, type=int)
-    per_page = request.args.get("per_page", 50, type=int)
-    account_id = request.args.get("account_id", type=int)
-    category_id = request.args.get("category_id", type=int)
-    month = request.args.get("month", type=int)
-    year = request.args.get("year", type=int)
-    search = request.args.get("search", "").strip()
+@router.get("/", response_model=TransactionPage)
+def list_transactions(
+    page: int = 1,
+    per_page: int = 50,
+    account_id: int | None = None,
+    category_id: int | None = None,
+    month: int | None = None,
+    year: int | None = None,
+    search: str = "",
+    db: Session = Depends(get_db),
+):
+    q = db.query(Transaction).order_by(Transaction.date.desc())
 
-    q = Transaction.query.order_by(Transaction.date.desc())
-
-    if account_id:
+    if account_id is not None:
         q = q.filter(Transaction.account_id == account_id)
-    if category_id:
+    if category_id is not None:
         q = q.filter(Transaction.category_id == category_id)
-    if year:
-        q = q.filter(db.extract("year", Transaction.date) == year)
-    if month:
-        q = q.filter(db.extract("month", Transaction.date) == month)
-    if search:
-        q = q.filter(Transaction.description.ilike(f"%{search}%"))
+    if year is not None:
+        q = q.filter(extract("year", Transaction.date) == year)
+    if month is not None:
+        q = q.filter(extract("month", Transaction.date) == month)
+    if search.strip():
+        q = q.filter(Transaction.description.ilike(f"%{search.strip()}%"))
 
-    paginated = q.paginate(page=page, per_page=per_page, error_out=False)
+    total = q.count()
+    pages = max(1, (total + per_page - 1) // per_page)
+    items = q.offset((page - 1) * per_page).limit(per_page).all()
 
-    return jsonify(
-        {
-            "transactions": [t.to_dict() for t in paginated.items],
-            "total": paginated.total,
-            "page": paginated.page,
-            "pages": paginated.pages,
-            "per_page": per_page,
-        }
+    return TransactionPage(
+        transactions=items,
+        total=total,
+        page=page,
+        pages=pages,
+        per_page=per_page,
     )
 
 
-@bp.get("/<int:txn_id>")
-def get_transaction(txn_id):
-    t = Transaction.query.get_or_404(txn_id)
-    return jsonify(t.to_dict())
+@router.get("/{txn_id}", response_model=TransactionOut)
+def get_transaction(txn_id: int, db: Session = Depends(get_db)):
+    t = db.get(Transaction, txn_id)
+    if not t:
+        raise HTTPException(status_code=404, detail="Transaction not found")
+    return t
 
 
-@bp.patch("/<int:txn_id>")
-def update_transaction(txn_id):
-    t = Transaction.query.get_or_404(txn_id)
-    data = request.get_json()
+@router.patch("/{txn_id}", response_model=TransactionOut)
+def update_transaction(txn_id: int, body: TransactionUpdate, db: Session = Depends(get_db)):
+    t = db.get(Transaction, txn_id)
+    if not t:
+        raise HTTPException(status_code=404, detail="Transaction not found")
 
-    if "category_id" in data:
-        if data["category_id"] is not None:
-            Category.query.get_or_404(data["category_id"])
-        t.category_id = data["category_id"]
+    if body.category_id is not None:
+        if not db.get(Category, body.category_id):
+            raise HTTPException(status_code=404, detail="Category not found")
+        t.category_id = body.category_id
+    elif body.category_id == 0:
+        t.category_id = None
 
-    if "is_recurring" in data:
-        t.is_recurring = bool(data["is_recurring"])
+    if body.is_recurring is not None:
+        t.is_recurring = body.is_recurring
 
-    db.session.commit()
-    return jsonify(t.to_dict())
+    db.commit()
+    db.refresh(t)
+    return t
 
 
-@bp.patch("/bulk-categorise")
-def bulk_categorise():
-    """Apply a category to all transactions matching a description fragment."""
-    data = request.get_json()
-    pattern = data.get("pattern", "").strip()
-    category_id = data.get("category_id")
-
-    if not pattern or category_id is None:
-        return jsonify({"error": "pattern and category_id required"}), 400
-
-    Category.query.get_or_404(category_id)
+@router.patch("/bulk-categorise", response_model=BulkCategoriseResponse)
+def bulk_categorise(body: BulkCategoriseRequest, db: Session = Depends(get_db)):
+    if not db.get(Category, body.category_id):
+        raise HTTPException(status_code=404, detail="Category not found")
 
     updated = (
-        Transaction.query.filter(Transaction.description.ilike(f"%{pattern}%"))
-        .update({"category_id": category_id}, synchronize_session=False)
+        db.query(Transaction)
+        .filter(Transaction.description.ilike(f"%{body.pattern}%"))
+        .update({"category_id": body.category_id}, synchronize_session=False)
     )
-    db.session.commit()
-    return jsonify({"updated": updated})
+    db.commit()
+    return BulkCategoriseResponse(updated=updated)

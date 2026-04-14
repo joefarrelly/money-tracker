@@ -1,113 +1,196 @@
 import os
+import uuid
+from datetime import datetime
 
-from flask import Blueprint, current_app, jsonify, request
+from fastapi import APIRouter, Depends, HTTPException, UploadFile
+from sqlalchemy.orm import Session
 from werkzeug.utils import secure_filename
 
-from database import db
-from models import Account, Transaction
-from parsers import barclays, chase
+from database import get_db
+from models import Account, StatementFormat, Transaction
+from parsers import universal
+from schemas import (
+    ColumnMapping,
+    ConfirmUploadRequest,
+    DetectBankResult,
+    PreviewResponse,
+    StatementFormatOut,
+    UploadResult,
+)
 
-bp = Blueprint("upload", __name__)
+router = APIRouter()
 
-ALLOWED_EXTENSIONS = {"pdf"}
-
-
-def _allowed(filename: str) -> bool:
-    return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
+_BASE = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+UPLOAD_DIR = os.path.join(_BASE, "uploads")
+TMP_DIR = os.path.join(UPLOAD_DIR, "tmp")
 
 
-def _get_or_create_account(bank: str, account_number: str) -> Account:
-    acc = Account.query.filter_by(account_number=account_number).first()
+def _ensure_dirs():
+    os.makedirs(UPLOAD_DIR, exist_ok=True)
+    os.makedirs(TMP_DIR, exist_ok=True)
+
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+def _get_or_create_account(bank: str, account_number: str, db: Session) -> Account:
+    acc = db.query(Account).filter_by(account_number=account_number).first()
     if not acc:
         acc = Account(bank=bank, account_number=account_number)
-        db.session.add(acc)
-        db.session.flush()
+        db.add(acc)
+        db.flush()
     return acc
 
 
-def _persist_transactions(df, account_id: int, source_file: str) -> dict:
-    """Insert parsed DataFrame rows, skipping duplicates."""
+def _persist_transactions(df, account_id: int, source_file: str, db: Session) -> dict:
     added = skipped = 0
+    new_txns = []
     for _, row in df.iterrows():
-        exists = Transaction.query.filter_by(
+        exists = db.query(Transaction).filter_by(
             account_id=account_id,
             date=row["date"].date(),
             description=row["description"],
             amount=round(float(row["amount"]), 2),
         ).first()
-
         if exists:
             skipped += 1
             continue
-
-        db.session.add(
-            Transaction(
-                account_id=account_id,
-                date=row["date"].date(),
-                description=str(row["description"]),
-                amount=round(float(row["amount"]), 2),
-                balance=round(float(row["balance"]), 2) if row["balance"] else None,
-                source_file=source_file,
-            )
+        bal = row.get("balance")
+        txn = Transaction(
+            account_id=account_id,
+            date=row["date"].date(),
+            description=str(row["description"]),
+            amount=round(float(row["amount"]), 2),
+            balance=round(float(bal), 2) if bal and bal == bal else None,
+            source_file=source_file,
         )
+        db.add(txn)
+        new_txns.append(txn)
         added += 1
+    db.commit()
+    for txn in new_txns:
+        db.refresh(txn)
+    return {"added": added, "skipped": skipped, "transactions": new_txns}
 
-    db.session.commit()
-    return {"added": added, "skipped": skipped}
+
+# ── Endpoints ─────────────────────────────────────────────────────────────────
+
+@router.get("/formats", response_model=list[StatementFormatOut])
+def list_formats(db: Session = Depends(get_db)):
+    return db.query(StatementFormat).order_by(
+        StatementFormat.is_builtin.desc(),
+        StatementFormat.use_count.desc(),
+    ).all()
 
 
-@bp.post("/")
-def upload_statement():
-    if "file" not in request.files:
-        return jsonify({"error": "No file provided"}), 400
+@router.post("/preview", response_model=PreviewResponse)
+async def preview_upload(file: UploadFile, db: Session = Depends(get_db)):
+    """
+    Upload a PDF statement and get back a preview of the detected column mapping.
+    The file is saved temporarily under a preview_token UUID.
+    Call /confirm with the token (and any adjustments) to complete the import.
+    """
+    if not file.filename or not file.filename.lower().endswith(".pdf"):
+        raise HTTPException(status_code=400, detail="Only PDF files are supported")
 
-    file = request.files["file"]
-    bank = request.form.get("bank", "").strip().lower()
-    account_number = request.form.get("account_number", "").strip()
+    _ensure_dirs()
+    token = str(uuid.uuid4())
+    tmp_path = os.path.join(TMP_DIR, f"{token}.pdf")
 
-    if not file.filename or not _allowed(file.filename):
-        return jsonify({"error": "Only PDF files are supported"}), 400
-
-    if not bank or not account_number:
-        return jsonify({"error": "bank and account_number are required"}), 400
-
-    filename = secure_filename(file.filename)
-    filepath = os.path.join(current_app.config["UPLOAD_FOLDER"], filename)
-    file.save(filepath)
+    contents = await file.read()
+    with open(tmp_path, "wb") as f:
+        f.write(contents)
 
     try:
-        if bank == "barclays":
-            year_param = request.form.get("year", type=int)
-            year = year_param or barclays.detect_year(filepath, filename)
-            df = barclays.parse(filepath, year)
-        elif bank == "chase":
-            df = chase.parse(filepath)
-        else:
-            return jsonify({"error": f"Unsupported bank: {bank}"}), 400
-
-        account = _get_or_create_account(bank, account_number)
-        result = _persist_transactions(df, account.id, filename)
-        result["account"] = account.to_dict()
-        return jsonify(result), 200
-
+        saved_formats = db.query(StatementFormat).all()
+        result = universal.extract_preview(tmp_path, filename=file.filename, saved_formats=saved_formats)
     except Exception as e:
-        db.session.rollback()
-        return jsonify({"error": str(e)}), 500
+        os.remove(tmp_path)
+        raise HTTPException(status_code=422, detail=str(e))
 
+    matched_fmt = result.pop("matched_format")
+
+    return PreviewResponse(
+        preview_token=token,
+        matched_format=matched_fmt,
+        confidence=result["confidence"],
+        column_headers=result["column_headers"],
+        proposed_mapping=ColumnMapping(**result["proposed_mapping"]),
+        detected_account_number=result["detected_account_number"],
+        detected_year=result["detected_year"],
+        needs_year=result["needs_year"],
+        sample_rows=result["sample_rows"],
+        total_rows=result["total_rows"],
+    )
+
+
+@router.post("/confirm", response_model=UploadResult)
+def confirm_upload(body: ConfirmUploadRequest, db: Session = Depends(get_db)):
+    """
+    Confirm a previewed upload and import the transactions.
+    Optionally saves the column mapping as a named format for future uploads.
+    """
+    tmp_path = os.path.join(TMP_DIR, f"{body.preview_token}.pdf")
+    if not os.path.exists(tmp_path):
+        raise HTTPException(status_code=404, detail="Preview not found or already used")
+
+    mapping_dict = body.mapping.model_dump()
+    year = body.year
+
+    try:
+        df = universal.parse_with_mapping(tmp_path, mapping_dict, year=year, skip_patterns=body.skip_patterns)
+    except Exception as e:
+        raise HTTPException(status_code=422, detail=str(e))
     finally:
-        if os.path.exists(filepath):
-            os.remove(filepath)
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
+
+    if df.empty:
+        raise HTTPException(status_code=422, detail="No transactions could be parsed from this file")
+
+    # Infer a bank name from the format or account number
+    bank_name = "unknown"
+    if body.format_id:
+        fmt = db.get(StatementFormat, body.format_id)
+        if fmt:
+            bank_name = fmt.name.lower()
+
+    account = _get_or_create_account(bank_name, body.account_number, db)
+    counts = _persist_transactions(df, account.id, body.preview_token, db)
+    db.refresh(account)
+
+    # Save format if requested
+    if body.save_format and body.format_name:
+        existing = db.query(StatementFormat).filter_by(name=body.format_name).first()
+        if not existing:
+            db.add(StatementFormat(
+                name=body.format_name,
+                column_headers=body.column_headers,
+                **mapping_dict,
+                is_builtin=False,
+            ))
+            db.commit()
+
+    # Bump use_count on the matched format
+    if body.format_id:
+        fmt = db.get(StatementFormat, body.format_id)
+        if fmt:
+            fmt.use_count += 1
+            fmt.last_used_at = datetime.utcnow()
+            db.commit()
+
+    return UploadResult(
+        added=counts["added"],
+        skipped=counts["skipped"],
+        account=account,
+        transactions=counts["transactions"],
+    )
 
 
-@bp.get("/detect-bank")
-def detect_bank_endpoint():
-    """Accept a filename and return the detected bank (for UI pre-fill)."""
-    filename = request.args.get("filename", "")
-    filename_lower = filename.lower()
-
-    if "barclays" in filename_lower or filename_lower.startswith("statement"):
-        return jsonify({"bank": "barclays"})
-    if "chase" in filename_lower:
-        return jsonify({"bank": "chase"})
-
-    return jsonify({"bank": None})
+@router.get("/detect-bank", response_model=DetectBankResult)
+def detect_bank(filename: str = ""):
+    lower = filename.lower()
+    if "barclays" in lower or lower.startswith("statement"):
+        return DetectBankResult(bank="barclays")
+    if "chase" in lower:
+        return DetectBankResult(bank="chase")
+    return DetectBankResult(bank=None)

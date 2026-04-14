@@ -1,15 +1,15 @@
 """Monthly summary and disposable income calculations."""
 
-from datetime import date
 from calendar import monthrange
+from datetime import date
 
-from sqlalchemy import func, extract
+from sqlalchemy import extract
+from sqlalchemy.orm import Session
 
-from database import db
 from models import RecurringExpense, Salary, Transaction
 
 
-def monthly_summary(year: int, month: int) -> dict:
+def monthly_summary(db: Session, year: int, month: int) -> dict:
     """
     Return a full monthly breakdown:
       - total_in / total_out
@@ -21,7 +21,7 @@ def monthly_summary(year: int, month: int) -> dict:
     start = date(year, month, 1)
     end = date(year, month, monthrange(year, month)[1])
 
-    txns = Transaction.query.filter(
+    txns = db.query(Transaction).filter(
         Transaction.date >= start,
         Transaction.date <= end,
     ).all()
@@ -29,18 +29,15 @@ def monthly_summary(year: int, month: int) -> dict:
     total_in = sum(t.amount for t in txns if t.amount > 0)
     total_out = abs(sum(t.amount for t in txns if t.amount < 0))
 
-    # Salary that month
-    salary_rows = Salary.query.filter(
+    salary_rows = db.query(Salary).filter(
         Salary.date >= start,
         Salary.date <= end,
     ).all()
     salary_total = sum(s.net_amount for s in salary_rows)
 
-    # Active recurring expenses
-    recurring = RecurringExpense.query.filter_by(is_active=True).all()
+    recurring = db.query(RecurringExpense).filter_by(is_active=True).all()
     recurring_monthly_total = sum(r.monthly_cost for r in recurring)
 
-    # Category breakdown (spending only)
     cat_breakdown = {}
     for t in txns:
         if t.amount >= 0:
@@ -52,7 +49,6 @@ def monthly_summary(year: int, month: int) -> dict:
         cat_breakdown[cat_name]["amount"] += abs(t.amount)
         cat_breakdown[cat_name]["count"] += 1
 
-    # Disposable = salary - recurring costs (ignores one-off spending)
     disposable = salary_total - recurring_monthly_total
 
     return {
@@ -69,11 +65,22 @@ def monthly_summary(year: int, month: int) -> dict:
             for k, v in sorted(cat_breakdown.items(), key=lambda x: -x[1]["amount"])
         ],
         "transaction_count": len(txns),
-        "salary_entries": [s.to_dict() for s in salary_rows],
+        "salary_entries": [
+            {
+                "id": s.id,
+                "date": s.date.isoformat(),
+                "gross_amount": s.gross_amount,
+                "net_amount": s.net_amount,
+                "employer": s.employer,
+                "notes": s.notes,
+                "created_at": s.created_at.isoformat(),
+            }
+            for s in salary_rows
+        ],
     }
 
 
-def trend_summary(months: int = 6) -> list[dict]:
+def trend_summary(db: Session, months: int = 6) -> list[dict]:
     """Return monthly summaries for the last N months."""
     from datetime import datetime
     from dateutil.relativedelta import relativedelta
@@ -82,5 +89,5 @@ def trend_summary(months: int = 6) -> list[dict]:
     results = []
     for i in range(months - 1, -1, -1):
         d = today - relativedelta(months=i)
-        results.append(monthly_summary(d.year, d.month))
+        results.append(monthly_summary(db, d.year, d.month))
     return results

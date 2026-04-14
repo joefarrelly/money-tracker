@@ -8,7 +8,7 @@ Personal finance tracker that consolidates:
 - Disposable income calculation (salary net − recurring costs)
 
 ## Stack
-- **Backend:** Flask + SQLAlchemy + SQLite (`backend/money_tracker.db`)
+- **Backend:** FastAPI + SQLAlchemy + SQLite (`backend/money_tracker.db`)
 - **Frontend:** React + TypeScript + Vite + Tailwind CSS
 
 ## Running Locally
@@ -20,7 +20,7 @@ python -m venv .venv
 pip install -r requirements.txt
 python app.py
 ```
-Runs on `http://localhost:5000`.
+Runs on `http://localhost:8000`. Interactive API docs at `http://localhost:8000/docs`.
 
 **Frontend** (from `frontend/`):
 ```bash
@@ -34,12 +34,14 @@ Runs on `http://localhost:5173`, proxies `/api` to the backend.
 ### Backend structure
 ```
 backend/
-  app.py            # Flask app factory, registers blueprints
-  models.py         # SQLAlchemy models
-  database.py       # DB init
-  config.py         # Config (DB path, upload folder)
-  routes/           # Blueprints: accounts, transactions, upload, salaries, categories, dashboard
-  parsers/          # PDF parsers: barclays.py, chase.py
+  app.py            # FastAPI app, registers routers, startup hook
+  models.py         # SQLAlchemy models (DeclarativeBase)
+  schemas.py        # Pydantic request/response models
+  database.py       # Engine, SessionLocal, get_db dependency, DB init + seeding
+  routes/           # APIRouters: accounts, transactions, upload, salaries, categories, dashboard
+  parsers/
+    universal.py    # Universal PDF parser: table extraction, column-role heuristics,
+                    #   format matching, preview + confirm flow (replaces barclays.py/chase.py)
   services/         # recurring.py (auto-detection), summary.py (disposable income)
 ```
 
@@ -58,4 +60,13 @@ frontend/src/
 - Disposable income = net salary − sum of active recurring expense monthly costs.
 
 ## PDF Parsing
-The canonical parsing logic lives in `C:/Users/Joe/Desktop/App/personal/ScrapeBanks/bank_app.py` (`process_barclays_pdf`, `process_chase_pdf`). Check there before rewriting any parser logic.
+The upload flow is a two-step preview → confirm pattern:
+1. `POST /api/upload/preview` — saves temp file, extracts tables via camelot, scores column roles, tries to match a saved `StatementFormat`, returns a `PreviewResponse` with `preview_token`.
+2. `POST /api/upload/confirm` — loads temp file by token, calls `parse_with_mapping` with the confirmed mapping, persists transactions, optionally saves the format for reuse.
+
+The universal parser (`parsers/universal.py`) handles all banks. It scores tables by header quality × column efficiency to find the transaction table, then infers column roles (date, description, amount, money_in/out, balance). `total_rows` in the preview reflects the count across all matching pages, not just the first.
+
+The original bank-specific parsing logic is in `C:/Users/Joe/Desktop/App/personal/ScrapeBanks/bank_app.py` (`process_barclays_pdf`, `process_chase_pdf`) — kept as reference but no longer used directly.
+
+## StatementFormats
+Built-in formats for Barclays and Chase are seeded on startup. User-defined formats are saved when "Save this format" is checked on confirm. `use_count` is bumped on each successful import. Schema migrations for new columns use `_migrate()` in `database.py` (PRAGMA table_info + ALTER TABLE — no Alembic).

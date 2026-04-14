@@ -1,38 +1,45 @@
-import os
-from flask import Flask
-from flask_cors import CORS
+from contextlib import asynccontextmanager
 
-from config import Config
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
 from database import init_db
+from routes.accounts import router as accounts_router
+from routes.categories import router as categories_router
+from routes.dashboard import router as dashboard_router
+from routes.salaries import router as salaries_router
+from routes.transactions import router as transactions_router
+from routes.upload import router as upload_router
 
 
-def create_app():
-    app = Flask(__name__)
-    app.config.from_object(Config)
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    init_db()
+    yield
 
-    os.makedirs(app.config["UPLOAD_FOLDER"], exist_ok=True)
 
-    CORS(app, resources={r"/api/*": {"origins": "http://localhost:5173"}})
+app = FastAPI(
+    title="Money Tracker API",
+    description="Personal finance tracker — bank statements, salaries, recurring expenses.",
+    version="2.0.0",
+    lifespan=lifespan,
+)
 
-    init_db(app)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-    from routes.transactions import bp as transactions_bp
-    from routes.upload import bp as upload_bp
-    from routes.categories import bp as categories_bp
-    from routes.salaries import bp as salaries_bp
-    from routes.dashboard import bp as dashboard_bp
-    from routes.accounts import bp as accounts_bp
-
-    app.register_blueprint(transactions_bp, url_prefix="/api/transactions")
-    app.register_blueprint(upload_bp, url_prefix="/api/upload")
-    app.register_blueprint(categories_bp, url_prefix="/api/categories")
-    app.register_blueprint(salaries_bp, url_prefix="/api/salaries")
-    app.register_blueprint(dashboard_bp, url_prefix="/api/dashboard")
-    app.register_blueprint(accounts_bp, url_prefix="/api/accounts")
-
-    return app
+app.include_router(accounts_router, prefix="/api/accounts", tags=["accounts"])
+app.include_router(categories_router, prefix="/api/categories", tags=["categories"])
+app.include_router(transactions_router, prefix="/api/transactions", tags=["transactions"])
+app.include_router(upload_router, prefix="/api/upload", tags=["upload"])
+app.include_router(salaries_router, prefix="/api/salaries", tags=["salaries"])
+app.include_router(dashboard_router, prefix="/api/dashboard", tags=["dashboard"])
 
 
 if __name__ == "__main__":
-    app = create_app()
-    app.run(debug=True, port=5000)
+    import uvicorn
+    uvicorn.run("app:app", host="0.0.0.0", port=8000, reload=True)

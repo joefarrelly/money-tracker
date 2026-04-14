@@ -1,101 +1,66 @@
-from datetime import datetime
-from database import db
+from datetime import datetime, date as date_type
+from sqlalchemy import Boolean, Column, Date, DateTime, Float, ForeignKey, Integer, JSON, String, Text
+from sqlalchemy.orm import relationship
+
+from database import Base
 
 
-class Account(db.Model):
+class Account(Base):
     __tablename__ = "accounts"
 
-    id = db.Column(db.Integer, primary_key=True)
-    bank = db.Column(db.String(50), nullable=False)  # 'barclays', 'chase'
-    account_number = db.Column(db.String(50), nullable=False, unique=True)
-    nickname = db.Column(db.String(100))
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    id = Column(Integer, primary_key=True)
+    bank = Column(String(50), nullable=False)
+    account_number = Column(String(50), nullable=False, unique=True)
+    nickname = Column(String(100))
+    created_at = Column(DateTime, default=datetime.utcnow)
 
-    transactions = db.relationship("Transaction", back_populates="account", lazy="dynamic")
-
-    def to_dict(self):
-        return {
-            "id": self.id,
-            "bank": self.bank,
-            "account_number": self.account_number,
-            "nickname": self.nickname or self.account_number,
-            "created_at": self.created_at.isoformat(),
-        }
+    transactions = relationship("Transaction", back_populates="account", lazy="dynamic")
 
 
-class Category(db.Model):
+class Category(Base):
     __tablename__ = "categories"
 
-    id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(100), nullable=False, unique=True)
-    color = db.Column(db.String(7), default="#6b7280")  # hex color
-    icon = db.Column(db.String(50))
+    id = Column(Integer, primary_key=True)
+    name = Column(String(100), nullable=False, unique=True)
+    color = Column(String(7), default="#6b7280")
+    icon = Column(String(50))
 
-    transactions = db.relationship("Transaction", back_populates="category", lazy="dynamic")
-    recurring_expenses = db.relationship("RecurringExpense", back_populates="category", lazy="dynamic")
-
-    def to_dict(self):
-        return {
-            "id": self.id,
-            "name": self.name,
-            "color": self.color,
-            "icon": self.icon,
-        }
+    transactions = relationship("Transaction", back_populates="category", lazy="dynamic")
+    recurring_expenses = relationship("RecurringExpense", back_populates="category", lazy="dynamic")
 
 
-class Transaction(db.Model):
+class Transaction(Base):
     __tablename__ = "transactions"
 
-    id = db.Column(db.Integer, primary_key=True)
-    account_id = db.Column(db.Integer, db.ForeignKey("accounts.id"), nullable=False)
-    date = db.Column(db.Date, nullable=False)
-    description = db.Column(db.Text, nullable=False)
-    # Positive = money in, negative = money out (unified amount field)
-    amount = db.Column(db.Float, nullable=False)
-    balance = db.Column(db.Float)
-    category_id = db.Column(db.Integer, db.ForeignKey("categories.id"), nullable=True)
-    is_recurring = db.Column(db.Boolean, default=False)
-    source_file = db.Column(db.String(255))
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    id = Column(Integer, primary_key=True)
+    account_id = Column(Integer, ForeignKey("accounts.id"), nullable=False)
+    date = Column(Date, nullable=False)
+    description = Column(Text, nullable=False)
+    amount = Column(Float, nullable=False)
+    balance = Column(Float)
+    category_id = Column(Integer, ForeignKey("categories.id"), nullable=True)
+    is_recurring = Column(Boolean, default=False)
+    source_file = Column(String(255))
+    created_at = Column(DateTime, default=datetime.utcnow)
 
-    account = db.relationship("Account", back_populates="transactions")
-    category = db.relationship("Category", back_populates="transactions")
-
-    def to_dict(self):
-        return {
-            "id": self.id,
-            "account_id": self.account_id,
-            "account": self.account.to_dict() if self.account else None,
-            "date": self.date.isoformat(),
-            "description": self.description,
-            "amount": self.amount,
-            "balance": self.balance,
-            "category_id": self.category_id,
-            "category": self.category.to_dict() if self.category else None,
-            "is_recurring": self.is_recurring,
-            "source_file": self.source_file,
-            "created_at": self.created_at.isoformat(),
-        }
+    account = relationship("Account", back_populates="transactions")
+    category = relationship("Category", back_populates="transactions")
 
 
-class RecurringExpense(db.Model):
+class RecurringExpense(Base):
     __tablename__ = "recurring_expenses"
 
-    id = db.Column(db.Integer, primary_key=True)
-    merchant_pattern = db.Column(db.String(255), nullable=False)
-    category_id = db.Column(db.Integer, db.ForeignKey("categories.id"), nullable=True)
-    # Typical monthly amount (negative for expense)
-    typical_amount = db.Column(db.Float, nullable=False)
-    # 'monthly' or 'annual'
-    frequency = db.Column(db.String(20), nullable=False, default="monthly")
-    # Day of month it usually hits (1-31), null if irregular
-    day_of_month = db.Column(db.Integer, nullable=True)
-    is_active = db.Column(db.Boolean, default=True)
-    # Auto-detected or manually confirmed
-    is_confirmed = db.Column(db.Boolean, default=False)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    id = Column(Integer, primary_key=True)
+    merchant_pattern = Column(String(255), nullable=False)
+    category_id = Column(Integer, ForeignKey("categories.id"), nullable=True)
+    typical_amount = Column(Float, nullable=False)
+    frequency = Column(String(20), nullable=False, default="monthly")
+    day_of_month = Column(Integer, nullable=True)
+    is_active = Column(Boolean, default=True)
+    is_confirmed = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
 
-    category = db.relationship("Category", back_populates="recurring_expenses")
+    category = relationship("Category", back_populates="recurring_expenses")
 
     @property
     def monthly_cost(self):
@@ -103,40 +68,50 @@ class RecurringExpense(db.Model):
             return self.typical_amount / 12
         return self.typical_amount
 
-    def to_dict(self):
-        return {
-            "id": self.id,
-            "merchant_pattern": self.merchant_pattern,
-            "category_id": self.category_id,
-            "category": self.category.to_dict() if self.category else None,
-            "typical_amount": self.typical_amount,
-            "frequency": self.frequency,
-            "day_of_month": self.day_of_month,
-            "is_active": self.is_active,
-            "is_confirmed": self.is_confirmed,
-            "monthly_cost": self.monthly_cost,
-            "created_at": self.created_at.isoformat(),
-        }
 
-
-class Salary(db.Model):
+class Salary(Base):
     __tablename__ = "salaries"
 
-    id = db.Column(db.Integer, primary_key=True)
-    date = db.Column(db.Date, nullable=False)
-    gross_amount = db.Column(db.Float, nullable=True)
-    net_amount = db.Column(db.Float, nullable=False)
-    employer = db.Column(db.String(255))
-    notes = db.Column(db.Text)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    id = Column(Integer, primary_key=True)
+    date = Column(Date, nullable=False)
+    gross_amount = Column(Float, nullable=True)
+    net_amount = Column(Float, nullable=False)
+    employer = Column(String(255))
+    notes = Column(Text)
+    created_at = Column(DateTime, default=datetime.utcnow)
 
-    def to_dict(self):
-        return {
-            "id": self.id,
-            "date": self.date.isoformat(),
-            "gross_amount": self.gross_amount,
-            "net_amount": self.net_amount,
-            "employer": self.employer,
-            "notes": self.notes,
-            "created_at": self.created_at.isoformat(),
-        }
+
+class StatementFormat(Base):
+    """
+    Saved column mapping for a bank statement format.
+    Built-in entries seed Barclays and Chase; users can save their own.
+    """
+    __tablename__ = "statement_formats"
+
+    id = Column(Integer, primary_key=True)
+    name = Column(String(100), nullable=False)
+
+    # Raw column header strings as they appear in the PDF (used for auto-matching)
+    column_headers = Column(JSON, nullable=False)
+
+    # Column indices (0-based) for each role
+    date_col = Column(Integer, nullable=False)
+    description_col = Column(Integer, nullable=False)
+    balance_col = Column(Integer, nullable=True)
+
+    # "split" = separate money_in / money_out columns (e.g. Barclays)
+    # "signed" = single amount column with +/- prefix (e.g. Chase)
+    amount_style = Column(String(10), nullable=False)
+    amount_col = Column(Integer, nullable=True)           # for "signed"
+    money_in_col = Column(Integer, nullable=True)         # for "split"
+    money_out_col = Column(Integer, nullable=True)        # for "split"
+    date_description_col = Column(Integer, nullable=True) # merged date+description column
+
+    # Date parsing
+    date_format = Column(String(30), nullable=False)          # e.g. "%d %b" or "%d %b %Y"
+    year_source = Column(String(20), nullable=False, default="inline")  # "inline"|"detect"|"manual"
+
+    is_builtin = Column(Boolean, default=False)
+    use_count = Column(Integer, default=0)
+    last_used_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
