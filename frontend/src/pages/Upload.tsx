@@ -147,7 +147,7 @@ function BulkUpload({ formats }: { formats: StatementFormat[] }) {
 
   if (result) {
     return (
-      <div className="max-w-2xl space-y-5">
+      <div className="max-w-4xl space-y-5">
         <div className="bg-gray-900 rounded-xl border border-green-800 p-4 flex items-center justify-between">
           <p className="text-green-400 text-sm font-medium">
             {result.total_added} transaction{result.total_added !== 1 ? "s" : ""} imported
@@ -162,20 +162,23 @@ function BulkUpload({ formats }: { formats: StatementFormat[] }) {
             <thead>
               <tr className="border-b border-gray-800 text-xs text-gray-500 uppercase tracking-wide">
                 <th className="px-4 py-2.5 text-left font-medium">File</th>
-                <th className="px-4 py-2.5 text-right font-medium">Added</th>
-                <th className="px-4 py-2.5 text-right font-medium">Skipped</th>
-                <th className="px-4 py-2.5 text-right font-medium">Status</th>
+                <th className="px-4 py-2.5 text-right font-medium w-20">Added</th>
+                <th className="px-4 py-2.5 text-right font-medium w-20">Skipped</th>
+                <th className="px-4 py-2.5 text-right font-medium w-16">Status</th>
               </tr>
             </thead>
             <tbody>
               {result.results.map((r: BulkFileResult, i: number) => (
                 <tr key={i} className="border-b border-gray-800/50 last:border-0">
-                  <td className="px-4 py-2 text-gray-300 truncate max-w-[260px]" title={r.filename}>{r.filename}</td>
+                  <td className="px-4 py-2">
+                    <span className="text-gray-300">{r.filename}</span>
+                    {r.error && <p className="text-red-400 text-xs mt-0.5">{r.error}</p>}
+                  </td>
                   <td className="px-4 py-2 text-right tabular-nums text-green-400">{r.error ? "—" : r.added}</td>
                   <td className="px-4 py-2 text-right tabular-nums text-gray-500">{r.error ? "—" : r.skipped}</td>
                   <td className="px-4 py-2 text-right">
                     {r.error
-                      ? <span className="text-red-400 text-xs" title={r.error}>Error</span>
+                      ? <span className="text-red-400 text-xs">Error</span>
                       : <span className="text-green-400 text-xs">OK</span>}
                   </td>
                 </tr>
@@ -188,7 +191,7 @@ function BulkUpload({ formats }: { formats: StatementFormat[] }) {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="max-w-lg space-y-5">
+    <form onSubmit={handleSubmit} className="max-w-2xl space-y-5">
       {/* File picker */}
       <div className="bg-gray-900 rounded-xl border border-gray-800 p-6 flex flex-col items-center gap-4 text-center">
         <div className="w-12 h-12 rounded-full bg-gray-800 flex items-center justify-center text-xl">📂</div>

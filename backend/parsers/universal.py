@@ -595,7 +595,7 @@ def parse_with_mapping(
 
     df = pd.concat(all_frames, ignore_index=True)
     df = df.map(lambda x: str(x).strip() if pd.notnull(x) else x)
-    df = df.replace({"": np.nan})
+    df = df.replace({"": np.nan}).infer_objects(copy=False)
     # Strip currency symbols and commas from all cells
     df = df.replace(r"[£$€,]", "", regex=True)
 
