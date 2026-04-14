@@ -216,3 +216,17 @@ class ConfirmUploadRequest(BaseModel):
     save_format: bool = False
     format_name: Optional[str] = None
     format_id: Optional[int] = None  # reference existing format to bump use_count
+
+
+class BulkFileResult(BaseModel):
+    filename: str
+    added: int = 0
+    skipped: int = 0
+    error: Optional[str] = None
+
+
+class BulkUploadResult(BaseModel):
+    results: list[BulkFileResult]
+    total_added: int
+    total_skipped: int
+    total_errors: int

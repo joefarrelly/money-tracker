@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { confirmUpload, getFormats, previewUpload } from "../api/client";
-import type { ColumnMapping, ColumnRole, PreviewResponse, StatementFormat, Transaction } from "../types";
+import { bulkUpload, confirmUpload, getFormats, previewUpload } from "../api/client";
+import type { BulkFileResult, BulkUploadResult, ColumnMapping, ColumnRole, PreviewResponse, StatementFormat, Transaction } from "../types";
 
 // ── Role metadata ─────────────────────────────────────────────────────────────
 
@@ -90,6 +90,195 @@ function formatToRoleMap(fmt: StatementFormat): Record<number, ColumnRole> {
   return out;
 }
 
+// ── Bulk upload component ─────────────────────────────────────────────────────
+
+function BulkUpload({ formats }: { formats: StatementFormat[] }) {
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [formatId, setFormatId]           = useState<number | "">("");
+  const [accountNumber, setAccountNumber] = useState("");
+  const [skipPatterns, setSkipPatterns]   = useState("");
+  const [year, setYear]                   = useState(new Date().getFullYear());
+  const [importing, setImporting]         = useState(false);
+  const [result, setResult]               = useState<BulkUploadResult | null>(null);
+  const [error, setError]                 = useState<string | null>(null);
+
+  const selectedFormat = formats.find((f) => f.id === formatId);
+  const needsYear = selectedFormat?.year_source === "manual";
+
+  function handleFiles(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files ?? []);
+    setSelectedFiles(files);
+    setResult(null);
+    setError(null);
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!selectedFiles.length) { setError("Select at least one PDF"); return; }
+    if (!formatId)              { setError("Select a format"); return; }
+    if (!accountNumber.trim()) { setError("Account number is required"); return; }
+
+    setError(null);
+    setImporting(true);
+    try {
+      const r = await bulkUpload(
+        selectedFiles,
+        formatId as number,
+        accountNumber.trim(),
+        skipPatterns,
+        needsYear ? year : undefined,
+      );
+      setResult(r);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setImporting(false);
+    }
+  }
+
+  function reset() {
+    setSelectedFiles([]);
+    setResult(null);
+    setError(null);
+    setSkipPatterns("");
+    if (fileRef.current) fileRef.current.value = "";
+  }
+
+  if (result) {
+    return (
+      <div className="max-w-2xl space-y-5">
+        <div className="bg-gray-900 rounded-xl border border-green-800 p-4 flex items-center justify-between">
+          <p className="text-green-400 text-sm font-medium">
+            {result.total_added} transaction{result.total_added !== 1 ? "s" : ""} imported
+            {result.total_skipped > 0 && <span className="text-gray-500 font-normal"> · {result.total_skipped} duplicates skipped</span>}
+            {result.total_errors > 0 && <span className="text-red-400 font-normal"> · {result.total_errors} file{result.total_errors !== 1 ? "s" : ""} failed</span>}
+          </p>
+          <button onClick={reset} className="text-sm text-indigo-400 hover:text-indigo-300">Upload more</button>
+        </div>
+
+        <div className="bg-gray-900 rounded-xl border border-gray-800 overflow-hidden">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-gray-800 text-xs text-gray-500 uppercase tracking-wide">
+                <th className="px-4 py-2.5 text-left font-medium">File</th>
+                <th className="px-4 py-2.5 text-right font-medium">Added</th>
+                <th className="px-4 py-2.5 text-right font-medium">Skipped</th>
+                <th className="px-4 py-2.5 text-right font-medium">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {result.results.map((r: BulkFileResult, i: number) => (
+                <tr key={i} className="border-b border-gray-800/50 last:border-0">
+                  <td className="px-4 py-2 text-gray-300 truncate max-w-[260px]" title={r.filename}>{r.filename}</td>
+                  <td className="px-4 py-2 text-right tabular-nums text-green-400">{r.error ? "—" : r.added}</td>
+                  <td className="px-4 py-2 text-right tabular-nums text-gray-500">{r.error ? "—" : r.skipped}</td>
+                  <td className="px-4 py-2 text-right">
+                    {r.error
+                      ? <span className="text-red-400 text-xs" title={r.error}>Error</span>
+                      : <span className="text-green-400 text-xs">OK</span>}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="max-w-lg space-y-5">
+      {/* File picker */}
+      <div className="bg-gray-900 rounded-xl border border-gray-800 p-6 flex flex-col items-center gap-4 text-center">
+        <div className="w-12 h-12 rounded-full bg-gray-800 flex items-center justify-center text-xl">📂</div>
+        <div>
+          <p className="text-sm text-gray-300 font-medium">
+            {selectedFiles.length > 0 ? `${selectedFiles.length} file${selectedFiles.length !== 1 ? "s" : ""} selected` : "Select PDF statements"}
+          </p>
+          <p className="text-xs text-gray-500 mt-1">All files must be from the same account and format</p>
+        </div>
+        <label className="cursor-pointer bg-indigo-600 hover:bg-indigo-500 px-4 py-2 rounded-lg text-sm font-medium transition-colors">
+          Choose files
+          <input ref={fileRef} type="file" accept=".pdf" multiple onChange={handleFiles} className="hidden" />
+        </label>
+        {selectedFiles.length > 0 && (
+          <div className="w-full text-left space-y-1 max-h-40 overflow-y-auto">
+            {selectedFiles.map((f, i) => (
+              <p key={i} className="text-xs text-gray-400 truncate">{f.name}</p>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Format + account */}
+      <div className="bg-gray-900 rounded-xl border border-gray-800 p-4 space-y-3">
+        <div>
+          <label className="text-xs text-gray-400">Format *</label>
+          <select
+            required
+            value={formatId}
+            onChange={(e) => setFormatId(e.target.value ? Number(e.target.value) : "")}
+            className="mt-1 w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm"
+          >
+            <option value="">— Select a saved format —</option>
+            {formats.map((f) => (
+              <option key={f.id} value={f.id}>{f.name}{f.is_builtin ? " (built-in)" : ""}</option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="text-xs text-gray-400">Account number *</label>
+          <input
+            type="text"
+            required
+            value={accountNumber}
+            onChange={(e) => setAccountNumber(e.target.value)}
+            placeholder="e.g. 12345678"
+            className="mt-1 w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm"
+          />
+        </div>
+        {needsYear && (
+          <div>
+            <label className="text-xs text-gray-400">Statement year *</label>
+            <input
+              type="number"
+              required
+              value={year}
+              onChange={(e) => setYear(Number(e.target.value))}
+              className="mt-1 w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm"
+            />
+            <p className="text-xs text-gray-500 mt-1">All selected files will use this year</p>
+          </div>
+        )}
+      </div>
+
+      {/* Skip patterns */}
+      <div className="bg-gray-900 rounded-xl border border-gray-800 p-4 space-y-2">
+        <label className="text-xs text-gray-400 font-medium uppercase tracking-wide">Skip rows</label>
+        <input
+          type="text"
+          value={skipPatterns}
+          onChange={(e) => setSkipPatterns(e.target.value)}
+          placeholder="e.g. Opening balance, Closing balance"
+          className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm"
+        />
+        <p className="text-xs text-gray-600">Comma-separated descriptions to exclude across all files</p>
+      </div>
+
+      {error && <p className="text-sm text-red-400">{error}</p>}
+
+      <button
+        type="submit"
+        disabled={importing || selectedFiles.length === 0}
+        className="w-full bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors"
+      >
+        {importing ? "Importing…" : `Import ${selectedFiles.length || ""} file${selectedFiles.length !== 1 ? "s" : ""}`}
+      </button>
+    </form>
+  );
+}
+
 // ── Component ─────────────────────────────────────────────────────────────────
 
 type Stage = "idle" | "previewing" | "mapping" | "importing" | "done";
@@ -97,6 +286,7 @@ type Stage = "idle" | "previewing" | "mapping" | "importing" | "done";
 export default function Upload() {
   const fileRef = useRef<HTMLInputElement>(null);
 
+  const [tab,      setTab]      = useState<"single" | "bulk">("single");
   const [stage,    setStage]    = useState<Stage>("idle");
   const [preview,  setPreview]  = useState<PreviewResponse | null>(null);
   const [roleMap,  setRoleMap]  = useState<Record<number, ColumnRole>>({});
@@ -426,31 +616,51 @@ export default function Upload() {
     );
   }
 
-  // Default: idle — file drop
+  // Default: idle — file drop (single) or bulk
   return (
     <div className="max-w-lg space-y-6">
-      <h1 className="text-lg font-semibold">Upload bank statement</h1>
-
-      <div className="bg-gray-900 rounded-xl border border-gray-800 p-8 flex flex-col items-center gap-4 text-center">
-        <div className="w-12 h-12 rounded-full bg-gray-800 flex items-center justify-center text-xl">
-          📄
+      <div className="flex items-center justify-between">
+        <h1 className="text-lg font-semibold">Upload bank statement</h1>
+        <div className="flex rounded-lg border border-gray-700 overflow-hidden text-sm">
+          <button
+            onClick={() => setTab("single")}
+            className={`px-3 py-1.5 transition-colors ${tab === "single" ? "bg-gray-700 text-white" : "text-gray-400 hover:text-gray-200"}`}
+          >
+            Single
+          </button>
+          <button
+            onClick={() => setTab("bulk")}
+            className={`px-3 py-1.5 transition-colors ${tab === "bulk" ? "bg-gray-700 text-white" : "text-gray-400 hover:text-gray-200"}`}
+          >
+            Bulk
+          </button>
         </div>
-        <div>
-          <p className="text-sm text-gray-300 font-medium">Drop a PDF statement</p>
-          <p className="text-xs text-gray-500 mt-1">Any bank — column mapping is detected automatically</p>
-        </div>
-        <label className="cursor-pointer bg-indigo-600 hover:bg-indigo-500 px-4 py-2 rounded-lg text-sm font-medium transition-colors">
-          Choose file
-          <input
-            ref={fileRef}
-            type="file"
-            accept=".pdf"
-            onChange={handleFile}
-            className="hidden"
-          />
-        </label>
-        {error && <p className="text-sm text-red-400">{error}</p>}
       </div>
+
+      {tab === "bulk" ? (
+        <BulkUpload formats={formats} />
+      ) : (
+        <div className="bg-gray-900 rounded-xl border border-gray-800 p-8 flex flex-col items-center gap-4 text-center">
+          <div className="w-12 h-12 rounded-full bg-gray-800 flex items-center justify-center text-xl">
+            📄
+          </div>
+          <div>
+            <p className="text-sm text-gray-300 font-medium">Drop a PDF statement</p>
+            <p className="text-xs text-gray-500 mt-1">Any bank — column mapping is detected automatically</p>
+          </div>
+          <label className="cursor-pointer bg-indigo-600 hover:bg-indigo-500 px-4 py-2 rounded-lg text-sm font-medium transition-colors">
+            Choose file
+            <input
+              ref={fileRef}
+              type="file"
+              accept=".pdf"
+              onChange={handleFile}
+              className="hidden"
+            />
+          </label>
+          {error && <p className="text-sm text-red-400">{error}</p>}
+        </div>
+      )}
     </div>
   );
 }

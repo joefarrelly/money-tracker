@@ -117,10 +117,37 @@ export const previewUpload = (file: File) => {
 };
 
 export const confirmUpload = (body: object) =>
-  request<{ added: number; skipped: number; account: import("../types").Account }>(
+  request<{ added: number; skipped: number; account: import("../types").Account; transactions: import("../types").Transaction[] }>(
     "/upload/confirm",
     { method: "POST", body: JSON.stringify(body) }
   );
 
 export const getFormats = () =>
   request<import("../types").StatementFormat[]>("/upload/formats");
+
+export const bulkUpload = (
+  files: File[],
+  formatId: number,
+  accountNumber: string,
+  skipPatterns: string,
+  year?: number,
+) => {
+  const fd = new FormData();
+  files.forEach((f) => fd.append("files", f));
+  fd.append("format_id", String(formatId));
+  fd.append("account_number", accountNumber);
+  fd.append("skip_patterns", skipPatterns);
+  if (year != null) fd.append("year", String(year));
+  return fetch(`${BASE}/upload/bulk`, { method: "POST", body: fd }).then(async (r) => {
+    const text = await r.text();
+    if (!r.ok) {
+      try {
+        const e = JSON.parse(text);
+        return Promise.reject(new Error(e.detail ?? e.error ?? `HTTP ${r.status}`));
+      } catch {
+        return Promise.reject(new Error(`Server error (${r.status}): ${text.slice(0, 120)}`));
+      }
+    }
+    return JSON.parse(text) as import("../types").BulkUploadResult;
+  });
+};

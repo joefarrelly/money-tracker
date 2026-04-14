@@ -1,8 +1,9 @@
 import os
 import uuid
 from datetime import datetime
+from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy.orm import Session
 from werkzeug.utils import secure_filename
 
@@ -10,6 +11,8 @@ from database import get_db
 from models import Account, StatementFormat, Transaction
 from parsers import universal
 from schemas import (
+    BulkFileResult,
+    BulkUploadResult,
     ColumnMapping,
     ConfirmUploadRequest,
     DetectBankResult,
@@ -183,6 +186,83 @@ def confirm_upload(body: ConfirmUploadRequest, db: Session = Depends(get_db)):
         skipped=counts["skipped"],
         account=account,
         transactions=counts["transactions"],
+    )
+
+
+@router.post("/bulk", response_model=BulkUploadResult)
+async def bulk_upload(
+    files: list[UploadFile] = File(...),
+    format_id: int = Form(...),
+    account_number: str = Form(...),
+    skip_patterns: str = Form(""),
+    year: Optional[int] = Form(None),
+    db: Session = Depends(get_db),
+):
+    """
+    Import multiple PDF statements at once using a saved format.
+    Each file is parsed independently; errors are reported per-file without
+    stopping the batch.
+    """
+    fmt = db.get(StatementFormat, format_id)
+    if not fmt:
+        raise HTTPException(status_code=404, detail="Format not found")
+
+    mapping_dict = {
+        "date_col": fmt.date_col,
+        "description_col": fmt.description_col,
+        "date_description_col": fmt.date_description_col,
+        "balance_col": fmt.balance_col,
+        "amount_style": fmt.amount_style,
+        "amount_col": fmt.amount_col,
+        "money_in_col": fmt.money_in_col,
+        "money_out_col": fmt.money_out_col,
+        "date_format": fmt.date_format,
+        "year_source": fmt.year_source,
+    }
+
+    parsed_year = year if fmt.year_source == "manual" else None
+    patterns = [p.strip() for p in skip_patterns.split(",") if p.strip()]
+    account = _get_or_create_account(fmt.name.lower(), account_number, db)
+
+    _ensure_dirs()
+    results: list[BulkFileResult] = []
+
+    for upload in files:
+        filename = upload.filename or "unknown.pdf"
+        if not filename.lower().endswith(".pdf"):
+            results.append(BulkFileResult(filename=filename, error="Not a PDF"))
+            continue
+
+        token = str(uuid.uuid4())
+        tmp_path = os.path.join(TMP_DIR, f"{token}.pdf")
+        try:
+            contents = await upload.read()
+            with open(tmp_path, "wb") as f:
+                f.write(contents)
+
+            df = universal.parse_with_mapping(tmp_path, mapping_dict, year=parsed_year, skip_patterns=patterns)
+            if df.empty:
+                results.append(BulkFileResult(filename=filename, error="No transactions found"))
+                continue
+
+            counts = _persist_transactions(df, account.id, token, db)
+            results.append(BulkFileResult(filename=filename, added=counts["added"], skipped=counts["skipped"]))
+        except Exception as e:
+            results.append(BulkFileResult(filename=filename, error=str(e)))
+        finally:
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+
+    # Bump use_count once for the whole batch
+    fmt.use_count += len([r for r in results if r.error is None])
+    fmt.last_used_at = datetime.utcnow()
+    db.commit()
+
+    return BulkUploadResult(
+        results=results,
+        total_added=sum(r.added for r in results),
+        total_skipped=sum(r.skipped for r in results),
+        total_errors=sum(1 for r in results if r.error is not None),
     )
 
 

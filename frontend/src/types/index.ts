@@ -99,6 +99,20 @@ export interface StatementFormat {
   use_count: number;
 }
 
+export interface BulkFileResult {
+  filename: string;
+  added: number;
+  skipped: number;
+  error: string | null;
+}
+
+export interface BulkUploadResult {
+  results: BulkFileResult[];
+  total_added: number;
+  total_skipped: number;
+  total_errors: number;
+}
+
 export type ColumnRole =
   | "date"
   | "description"
