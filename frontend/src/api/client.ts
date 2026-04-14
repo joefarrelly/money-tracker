@@ -60,6 +60,49 @@ export const createSalary = (data: object) =>
 export const deleteSalary = (id: number) =>
   request<void>(`/salaries/${id}`, { method: "DELETE" });
 
+export const bulkUploadPayslips = (files: File[]) => {
+  const fd = new FormData();
+  files.forEach((f) => fd.append("files", f));
+  return fetch(`${BASE}/salaries/bulk-upload-payslips`, { method: "POST", body: fd }).then(
+    async (r) => {
+      const text = await r.text();
+      if (!r.ok) {
+        try {
+          const e = JSON.parse(text);
+          return Promise.reject(new Error(e.detail ?? `HTTP ${r.status}`));
+        } catch {
+          return Promise.reject(new Error(`HTTP ${r.status}: ${text.slice(0, 120)}`));
+        }
+      }
+      return JSON.parse(text) as {
+        results: { filename: string; status: string; detail?: string; date?: string; net?: number }[];
+        imported: number;
+        skipped: number;
+        errors: number;
+      };
+    }
+  );
+};
+
+export const uploadPayslip = (file: File) => {
+  const fd = new FormData();
+  fd.append("file", file);
+  return fetch(`${BASE}/salaries/upload-payslip`, { method: "POST", body: fd }).then(
+    async (r) => {
+      const text = await r.text();
+      if (!r.ok) {
+        try {
+          const e = JSON.parse(text);
+          return Promise.reject(new Error(e.detail ?? `HTTP ${r.status}`));
+        } catch {
+          return Promise.reject(new Error(`HTTP ${r.status}: ${text.slice(0, 120)}`));
+        }
+      }
+      return JSON.parse(text) as import("../types").Salary;
+    }
+  );
+};
+
 // Dashboard
 export const getMonthlySummary = (year: number, month: number) =>
   request<import("../types").MonthlySummary>(
@@ -87,6 +130,34 @@ export const patchRecurring = (id: number, data: object) =>
 // Accounts
 export const getAccounts = () =>
   request<import("../types").Account[]>("/accounts/");
+
+export const updateAccount = (id: number, nickname: string) =>
+  request<import("../types").Account>(`/accounts/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ nickname }),
+  });
+
+// Settings — NI numbers / person identities
+export const getNiNumbers = () =>
+  request<{ ni_number: string; display_name: string | null; identity_id: number | null }[]>(
+    "/settings/ni-numbers"
+  );
+
+export const setNiName = (ni_number: string, display_name: string) =>
+  request<import("../types").PersonIdentity>(`/settings/ni-numbers/${ni_number}`, {
+    method: "PUT",
+    body: JSON.stringify({ display_name }),
+  });
+
+// kept for Salaries page name resolution
+export const getIdentities = () =>
+  request<{ ni_number: string; display_name: string | null; identity_id: number | null }[]>(
+    "/settings/ni-numbers"
+  ).then((rows) =>
+    rows
+      .filter((r) => r.display_name !== null)
+      .map((r) => ({ id: r.identity_id!, ni_number: r.ni_number, display_name: r.display_name!, created_at: "" }))
+  );
 
 // Upload
 export const uploadStatement = (formData: FormData) =>

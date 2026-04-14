@@ -33,22 +33,27 @@ def init_db():
 
 def _migrate():
     """Add columns that exist in the model but are missing from the live DB."""
+    from sqlalchemy import text
+
     migrations = [
         ("statement_formats", "date_description_col", "INTEGER"),
+        ("salaries", "source_file", "VARCHAR(255)"),
+        ("salaries", "ni_number", "VARCHAR(20)"),
     ]
     with engine.connect() as conn:
         for table, column, col_type in migrations:
-            rows = conn.execute(
-                __import__("sqlalchemy").text(f"PRAGMA table_info({table})")
-            ).fetchall()
+            rows = conn.execute(text(f"PRAGMA table_info({table})")).fetchall()
             existing = {r[1] for r in rows}
             if column not in existing:
-                conn.execute(
-                    __import__("sqlalchemy").text(
-                        f"ALTER TABLE {table} ADD COLUMN {column} {col_type}"
-                    )
-                )
+                conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {col_type}"))
                 conn.commit()
+
+        # Partial unique index: prevent duplicate (date, ni_number) when ni_number is set
+        conn.execute(text(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_salary_date_ni "
+            "ON salaries(date, ni_number) WHERE ni_number IS NOT NULL"
+        ))
+        conn.commit()
 
 
 def _seed_builtin_formats():

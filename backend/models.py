@@ -69,6 +69,15 @@ class RecurringExpense(Base):
         return self.typical_amount
 
 
+class PersonIdentity(Base):
+    __tablename__ = "person_identities"
+
+    id = Column(Integer, primary_key=True)
+    ni_number = Column(String(20), unique=True, nullable=False)
+    display_name = Column(String(100), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
 class Salary(Base):
     __tablename__ = "salaries"
 
@@ -78,7 +87,28 @@ class Salary(Base):
     net_amount = Column(Float, nullable=False)
     employer = Column(String(255))
     notes = Column(Text)
+    ni_number = Column(String(20), nullable=True)
+    source_file = Column(String(255))
     created_at = Column(DateTime, default=datetime.utcnow)
+
+    line_items = relationship(
+        "PayslipLineItem", back_populates="salary", cascade="all, delete-orphan"
+    )
+
+
+class PayslipLineItem(Base):
+    __tablename__ = "payslip_line_items"
+
+    id = Column(Integer, primary_key=True)
+    salary_id = Column(Integer, ForeignKey("salaries.id", ondelete="CASCADE"), nullable=False)
+    description = Column(String(255), nullable=False)
+    rate = Column(Float, nullable=True)
+    units = Column(String(100), nullable=True)
+    amount = Column(Float, nullable=False)
+    this_year_amount = Column(Float, nullable=True)
+    line_type = Column(String(20), nullable=False)  # "earning" | "deduction"
+
+    salary = relationship("Salary", back_populates="line_items")
 
 
 class StatementFormat(Base):

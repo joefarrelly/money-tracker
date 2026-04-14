@@ -4,6 +4,7 @@ import Transactions from "./pages/Transactions";
 import Recurring from "./pages/Recurring";
 import Salaries from "./pages/Salaries";
 import Upload from "./pages/Upload";
+import Settings from "./pages/Settings";
 
 const navItems = [
   { to: "/", label: "Dashboard" },
@@ -11,6 +12,7 @@ const navItems = [
   { to: "/recurring", label: "Recurring" },
   { to: "/salaries", label: "Salaries" },
   { to: "/upload", label: "Upload" },
+  { to: "/settings", label: "Settings" },
 ];
 
 export default function App() {
@@ -41,6 +43,7 @@ export default function App() {
           <Route path="/recurring" element={<Recurring />} />
           <Route path="/salaries" element={<Salaries />} />
           <Route path="/upload" element={<Upload />} />
+          <Route path="/settings" element={<Settings />} />
         </Routes>
       </main>
     </div>

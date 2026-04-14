@@ -42,6 +42,16 @@ export interface RecurringExpense {
   created_at: string;
 }
 
+export interface PayslipLineItem {
+  id: number;
+  description: string;
+  rate: number | null;
+  units: string | null;
+  amount: number;
+  this_year_amount: number | null;
+  line_type: "earning" | "deduction";
+}
+
 export interface Salary {
   id: number;
   date: string;
@@ -49,6 +59,16 @@ export interface Salary {
   net_amount: number;
   employer: string | null;
   notes: string | null;
+  ni_number: string | null;
+  source_file: string | null;
+  created_at: string;
+  line_items: PayslipLineItem[];
+}
+
+export interface PersonIdentity {
+  id: number;
+  ni_number: string;
+  display_name: string;
   created_at: string;
 }
 

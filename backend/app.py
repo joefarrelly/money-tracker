@@ -8,6 +8,7 @@ from routes.accounts import router as accounts_router
 from routes.categories import router as categories_router
 from routes.dashboard import router as dashboard_router
 from routes.salaries import router as salaries_router
+from routes.settings import router as settings_router
 from routes.transactions import router as transactions_router
 from routes.upload import router as upload_router
 
@@ -37,6 +38,7 @@ app.include_router(categories_router, prefix="/api/categories", tags=["categorie
 app.include_router(transactions_router, prefix="/api/transactions", tags=["transactions"])
 app.include_router(upload_router, prefix="/api/upload", tags=["upload"])
 app.include_router(salaries_router, prefix="/api/salaries", tags=["salaries"])
+app.include_router(settings_router, prefix="/api/settings", tags=["settings"])
 app.include_router(dashboard_router, prefix="/api/dashboard", tags=["dashboard"])
 
 
