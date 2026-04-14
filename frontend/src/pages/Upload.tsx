@@ -643,7 +643,7 @@ export default function Upload() {
 
   // Default: idle — file drop (single) or bulk
   return (
-    <div className="max-w-lg space-y-6">
+    <div className={`${tab === "single" ? "max-w-lg" : "max-w-4xl"} space-y-6`}>
       <div className="flex items-center justify-between">
         <h1 className="text-lg font-semibold">Upload bank statement</h1>
         <div className="flex rounded-lg border border-gray-700 overflow-hidden text-sm">
