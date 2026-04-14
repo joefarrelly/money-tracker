@@ -25,6 +25,8 @@ import sys
 import camelot
 import numpy as np
 import pandas as pd
+
+pd.set_option("future.no_silent_downcasting", True)
 import PyPDF2
 
 # Ordered list of date formats to try, paired with year_source hint
@@ -595,7 +597,7 @@ def parse_with_mapping(
 
     df = pd.concat(all_frames, ignore_index=True)
     df = df.map(lambda x: str(x).strip() if pd.notnull(x) else x)
-    df = df.replace({"": np.nan}).infer_objects(copy=False)
+    df = df.replace({"": np.nan})
     # Strip currency symbols and commas from all cells
     df = df.replace(r"[£$€,]", "", regex=True)
 
