@@ -44,7 +44,7 @@ backend/
     universal.py    # Universal PDF parser: table extraction, column-role heuristics,
                     #   format matching, preview + confirm flow (replaces barclays.py/chase.py)
     payslip.py      # Payslip PDF parser: handles 3 table layouts, extracts line items + NI number
-  services/         # recurring.py (auto-detection), summary.py (disposable income)
+  services/         # recurring.py (auto-detection), summary.py (monthly summary + disposable income)
 ```
 
 ### Frontend structure
@@ -88,3 +88,12 @@ Single upload: `POST /api/salaries/upload-payslip`. Bulk (one-time): `POST /api/
 ## Settings
 `GET/PUT /api/settings/ni-numbers` — lists all NI numbers seen in payslips, create/update display name.
 Accounts already have nickname support via `PATCH /api/accounts/{id}`.
+
+## Dashboard Summary API
+`GET /api/dashboard/summary?year=Y&month=M` returns an enriched `MonthlySummary`:
+- `recurring_actuals` — for each active recurring expense, matches transactions in the month by merchant pattern substring, computes `actual_amount`, `found_this_month`, and `is_over` (>15% above monthly cost)
+- `salary_entries[].line_items` — full payslip line items (earnings + deductions) included inline; empty for manual salary entries
+
+`GET /api/dashboard/trend?months=N` returns N months of `MonthlySummary` (without `recurring_actuals`/`line_items` for performance).
+
+Currency values are formatted to 2 decimal places throughout the frontend (`toLocaleString` with `minimumFractionDigits: 2`).

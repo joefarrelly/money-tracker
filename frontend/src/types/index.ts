@@ -79,6 +79,17 @@ export interface CategoryBreakdown {
   count: number;
 }
 
+export interface RecurringActual {
+  id: number;
+  merchant_pattern: string;
+  typical_amount: number;
+  monthly_cost: number;
+  frequency: "monthly" | "annual";
+  actual_amount: number;
+  found_this_month: boolean;
+  is_over: boolean;
+}
+
 export interface MonthlySummary {
   year: number;
   month: number;
@@ -90,6 +101,7 @@ export interface MonthlySummary {
   disposable_income: number;
   category_breakdown: CategoryBreakdown[];
   transaction_count: number;
+  recurring_actuals: RecurringActual[];
   salary_entries: Salary[];
 }
 

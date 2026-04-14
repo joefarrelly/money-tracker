@@ -20,6 +20,11 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
 }
 
 // Transactions
+export const getRecentTransactions = (year: number, month: number, limit = 8) =>
+  request<import("../types").PaginatedTransactions>(
+    `/transactions/?year=${year}&month=${month}&per_page=${limit}&page=1`
+  );
+
 export const getTransactions = (params: Record<string, string | number>) =>
   request<import("../types").PaginatedTransactions>(
     `/transactions/?${new URLSearchParams(params as Record<string, string>)}`

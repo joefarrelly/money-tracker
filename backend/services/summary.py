@@ -51,6 +51,25 @@ def monthly_summary(db: Session, year: int, month: int) -> dict:
 
     disposable = salary_total - recurring_monthly_total
 
+    # Recurring actuals — compare each active recurring expense against this month's transactions
+    recurring_actuals = []
+    for r in recurring:
+        matching = [
+            t for t in txns
+            if t.amount < 0 and r.merchant_pattern.lower() in t.description.lower()
+        ]
+        actual = round(abs(sum(t.amount for t in matching)), 2)
+        recurring_actuals.append({
+            "id": r.id,
+            "merchant_pattern": r.merchant_pattern,
+            "typical_amount": r.typical_amount,
+            "monthly_cost": round(r.monthly_cost, 2),
+            "frequency": r.frequency,
+            "actual_amount": actual,
+            "found_this_month": actual > 0,
+            "is_over": actual > 0 and actual > r.monthly_cost * 1.15,
+        })
+
     return {
         "year": year,
         "month": month,
@@ -65,6 +84,7 @@ def monthly_summary(db: Session, year: int, month: int) -> dict:
             for k, v in sorted(cat_breakdown.items(), key=lambda x: -x[1]["amount"])
         ],
         "transaction_count": len(txns),
+        "recurring_actuals": recurring_actuals,
         "salary_entries": [
             {
                 "id": s.id,
@@ -73,7 +93,20 @@ def monthly_summary(db: Session, year: int, month: int) -> dict:
                 "net_amount": s.net_amount,
                 "employer": s.employer,
                 "notes": s.notes,
+                "ni_number": s.ni_number,
                 "created_at": s.created_at.isoformat(),
+                "line_items": [
+                    {
+                        "id": li.id,
+                        "description": li.description,
+                        "amount": li.amount,
+                        "line_type": li.line_type,
+                        "rate": li.rate,
+                        "units": li.units,
+                        "this_year_amount": li.this_year_amount,
+                    }
+                    for li in s.line_items
+                ],
             }
             for s in salary_rows
         ],
