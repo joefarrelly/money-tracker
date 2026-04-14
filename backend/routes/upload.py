@@ -189,6 +189,31 @@ def confirm_upload(body: ConfirmUploadRequest, db: Session = Depends(get_db)):
     )
 
 
+@router.post("/detect-account")
+async def detect_account(file: UploadFile):
+    """
+    Lightweight endpoint: extract text from the first few pages of a PDF and
+    return the detected account number (or null). No database writes.
+    """
+    if not file.filename or not file.filename.lower().endswith(".pdf"):
+        raise HTTPException(status_code=400, detail="Only PDF files are supported")
+
+    _ensure_dirs()
+    token = str(uuid.uuid4())
+    tmp_path = os.path.join(TMP_DIR, f"{token}.pdf")
+    try:
+        contents = await file.read()
+        with open(tmp_path, "wb") as f:
+            f.write(contents)
+        text = universal._extract_text(tmp_path)
+        account_number = universal.detect_account_number(text)
+    finally:
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
+
+    return {"account_number": account_number}
+
+
 @router.post("/bulk", response_model=BulkUploadResult)
 async def bulk_upload(
     files: list[UploadFile] = File(...),

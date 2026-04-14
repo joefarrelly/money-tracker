@@ -125,6 +125,16 @@ export const confirmUpload = (body: object) =>
 export const getFormats = () =>
   request<import("../types").StatementFormat[]>("/upload/formats");
 
+export const detectAccount = (file: File) => {
+  const fd = new FormData();
+  fd.append("file", file);
+  return fetch(`${BASE}/upload/detect-account`, { method: "POST", body: fd }).then(async (r) => {
+    const text = await r.text();
+    if (!r.ok) return { account_number: null };
+    return JSON.parse(text) as { account_number: string | null };
+  });
+};
+
 export const bulkUpload = (
   files: File[],
   formatId: number,

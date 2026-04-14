@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { bulkUpload, confirmUpload, getFormats, previewUpload } from "../api/client";
+import { bulkUpload, confirmUpload, detectAccount, getFormats, previewUpload } from "../api/client";
 import type { BulkFileResult, BulkUploadResult, ColumnMapping, ColumnRole, PreviewResponse, StatementFormat, Transaction } from "../types";
 
 // ── Role metadata ─────────────────────────────────────────────────────────────
@@ -94,23 +94,32 @@ function formatToRoleMap(fmt: StatementFormat): Record<number, ColumnRole> {
 
 function BulkUpload({ formats, onSwitchToSingle }: { formats: StatementFormat[]; onSwitchToSingle: () => void }) {
   const fileRef = useRef<HTMLInputElement>(null);
-  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
-  const [formatId, setFormatId]           = useState<number | "">("");
-  const [accountNumber, setAccountNumber] = useState("");
-  const [skipPatterns, setSkipPatterns]   = useState("");
-  const [year, setYear]                   = useState(new Date().getFullYear());
-  const [importing, setImporting]         = useState(false);
-  const [result, setResult]               = useState<BulkUploadResult | null>(null);
-  const [error, setError]                 = useState<string | null>(null);
+  const [selectedFiles, setSelectedFiles]     = useState<File[]>([]);
+  const [formatId, setFormatId]               = useState<number | "">("");
+  const [accountNumber, setAccountNumber]     = useState("");
+  const [accountDetected, setAccountDetected] = useState(false);
+  const [skipPatterns, setSkipPatterns]       = useState("");
+  const [year, setYear]                       = useState(new Date().getFullYear());
+  const [importing, setImporting]             = useState(false);
+  const [result, setResult]                   = useState<BulkUploadResult | null>(null);
+  const [error, setError]                     = useState<string | null>(null);
 
   const selectedFormat = formats.find((f) => f.id === formatId);
   const needsYear = selectedFormat?.year_source === "manual";
 
-  function handleFiles(e: React.ChangeEvent<HTMLInputElement>) {
+  async function handleFiles(e: React.ChangeEvent<HTMLInputElement>) {
     const files = Array.from(e.target.files ?? []);
     setSelectedFiles(files);
     setResult(null);
     setError(null);
+    setAccountDetected(false);
+    if (files.length > 0) {
+      const { account_number } = await detectAccount(files[0]);
+      if (account_number) {
+        setAccountNumber(account_number);
+        setAccountDetected(true);
+      }
+    }
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -239,12 +248,17 @@ function BulkUpload({ formats, onSwitchToSingle }: { formats: StatementFormat[];
           </select>
         </div>
         <div>
-          <label className="text-xs text-gray-400">Account number *</label>
+          <div className="flex items-center gap-2">
+            <label className="text-xs text-gray-400">Account number *</label>
+            {accountDetected && (
+              <span className="text-xs text-green-500">auto-detected</span>
+            )}
+          </div>
           <input
             type="text"
             required
             value={accountNumber}
-            onChange={(e) => setAccountNumber(e.target.value)}
+            onChange={(e) => { setAccountNumber(e.target.value); setAccountDetected(false); }}
             placeholder="e.g. 12345678"
             className="mt-1 w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm"
           />
