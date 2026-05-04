@@ -625,14 +625,60 @@ def parse_with_mapping(
 
     if date_desc_col is not None:
         # Merged column: split date prefix from description text
-        parsed = [split_date_description(v, date_fmt, year) for v in df.iloc[:, date_desc_col].astype(str)]
+        parsed = [split_date_description(v, date_fmt, year) for v in df.iloc[:, date_desc_col].fillna("").astype(str)]
         df["_date"] = pd.Series([p[0] for p in parsed], index=df.index)
         df["_description"] = pd.Series([p[1] for p in parsed], index=df.index)
     else:
         df["_date"] = df.iloc[:, date_col].apply(_parse_date)
-        df["_description"] = df.iloc[:, desc_col].astype(str)
+        df["_description"] = df.iloc[:, desc_col].fillna("").astype(str)
 
     df["_date"] = df["_date"].ffill()
+
+    # Some PDFs (e.g. Monzo/Starling style) split descriptions across rows:
+    # the amount row has an empty description, and the payee name appears on the
+    # immediately preceding row(s). Walk backward from each empty-description amount
+    # row, collecting description fragments until we hit a row with a date (which
+    # marks the start of a new transaction group) or another amount row.
+    if desc_col is not None or date_desc_col is not None:
+        amt_col_idx = mapping.get("amount_col")
+        in_col_idx = mapping.get("money_in_col")
+        out_col_idx = mapping.get("money_out_col")
+        date_col_idx = date_col if date_col is not None else date_desc_col
+
+        def _has_amount(row_idx):
+            if amount_style == "split":
+                in_v = df.iloc[row_idx, in_col_idx] if in_col_idx is not None else np.nan
+                out_v = df.iloc[row_idx, out_col_idx] if out_col_idx is not None else np.nan
+                return pd.notna(in_v) or pd.notna(out_v)
+            else:
+                if amt_col_idx is None:
+                    return False
+                raw = df.iloc[row_idx, amt_col_idx]
+                if pd.isna(raw):
+                    return False
+                try:
+                    val = float(str(raw).strip())
+                    return not np.isnan(val) and val != 0
+                except (ValueError, TypeError):
+                    return False
+
+        def _has_date(row_idx):
+            if date_col_idx is None:
+                return False
+            return pd.notna(df.iloc[row_idx, date_col_idx])
+
+        merged_descs = df["_description"].tolist()
+        n = len(df)
+        for i in range(n):
+            if merged_descs[i] or not _has_amount(i):
+                continue
+            # The payee/merchant is the single description row immediately before
+            # the amount row. Rows further back (type labels like "Payment",
+            # "Transfer") belong to the preceding transaction.
+            j = i - 1
+            if j >= 0 and not _has_amount(j) and not _has_date(j) and merged_descs[j]:
+                merged_descs[i] = merged_descs[j]
+        df["_description"] = merged_descs
 
     df["_balance"] = (
         pd.to_numeric(df.iloc[:, bal_col], errors="coerce")
