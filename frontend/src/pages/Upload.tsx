@@ -11,16 +11,12 @@ const ROLES: { value: ColumnRole; label: string; color: string }[] = [
   { value: "money_in",         label: "Money In",              color: "text-green-400" },
   { value: "money_out",        label: "Money Out",             color: "text-red-400" },
   { value: "amount",           label: "Amount (±)",            color: "text-yellow-400" },
-  { value: "balance",          label: "Balance",               color: "text-gray-400" },
-  { value: "ignore",           label: "Ignore",                color: "text-gray-600" },
+  { value: "balance",          label: "Balance",               color: "text-slate-400" },
+  { value: "ignore",           label: "Ignore",                color: "text-slate-600" },
 ];
 
 function roleColor(role: string) {
-  return ROLES.find((r) => r.value === role)?.color ?? "text-gray-400";
-}
-
-function roleLabel(role: string) {
-  return ROLES.find((r) => r.value === role)?.label ?? role;
+  return ROLES.find((r) => r.value === role)?.color ?? "text-slate-400";
 }
 
 // ── Mapping helpers ───────────────────────────────────────────────────────────
@@ -148,28 +144,31 @@ function BulkUpload({ formats, onSwitchToSingle }: { formats: StatementFormat[];
 
   function reset() {
     setSelectedFiles([]);
+    setFormatId("");
+    setAccountNumber("");
+    setAccountDetected(false);
+    setSkipPatterns("");
     setResult(null);
     setError(null);
-    setSkipPatterns("");
     if (fileRef.current) fileRef.current.value = "";
   }
 
   if (result) {
     return (
       <div className="max-w-4xl space-y-5">
-        <div className="bg-gray-900 rounded-xl border border-green-800 p-4 flex items-center justify-between">
+        <div className="bg-slate-900 rounded-xl border border-green-800 p-4 flex items-center justify-between">
           <p className="text-green-400 text-sm font-medium">
             {result.total_added} transaction{result.total_added !== 1 ? "s" : ""} imported
-            {result.total_skipped > 0 && <span className="text-gray-500 font-normal"> · {result.total_skipped} duplicates skipped</span>}
+            {result.total_skipped > 0 && <span className="text-slate-500 font-normal"> · {result.total_skipped} duplicates skipped</span>}
             {result.total_errors > 0 && <span className="text-red-400 font-normal"> · {result.total_errors} file{result.total_errors !== 1 ? "s" : ""} failed</span>}
           </p>
           <button onClick={reset} className="text-sm text-indigo-400 hover:text-indigo-300">Upload more</button>
         </div>
 
-        <div className="bg-gray-900 rounded-xl border border-gray-800 overflow-hidden">
+        <div className="bg-slate-900 rounded-xl border border-slate-800 overflow-hidden">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-gray-800 text-xs text-gray-500 uppercase tracking-wide">
+              <tr className="border-b border-slate-800 text-xs text-slate-500 uppercase tracking-wide">
                 <th className="px-4 py-2.5 text-left font-medium">File</th>
                 <th className="px-4 py-2.5 text-right font-medium w-20">Added</th>
                 <th className="px-4 py-2.5 text-right font-medium w-20">Skipped</th>
@@ -178,14 +177,14 @@ function BulkUpload({ formats, onSwitchToSingle }: { formats: StatementFormat[];
             </thead>
             <tbody>
               {result.results.map((r: BulkFileResult, i: number) => (
-                <tr key={i} className="border-b border-gray-800/50 last:border-0">
+                <tr key={i} className="border-b border-slate-800/50 last:border-0">
                   <td className="px-4 py-2">
-                    <span className="text-gray-300">{r.filename}</span>
+                    <span className="text-slate-300">{r.filename}</span>
                     {r.error && <p className="text-red-400 text-xs mt-0.5">{r.error}</p>}
                     {r.note && <p className="text-yellow-600 text-xs mt-0.5">{r.note}</p>}
                   </td>
                   <td className="px-4 py-2 text-right tabular-nums text-green-400">{r.error ? "—" : r.added}</td>
-                  <td className="px-4 py-2 text-right tabular-nums text-gray-500">{r.error ? "—" : r.skipped}</td>
+                  <td className="px-4 py-2 text-right tabular-nums text-slate-500">{r.error ? "—" : r.skipped}</td>
                   <td className="px-4 py-2 text-right">
                     {r.error ? (
                       <button
@@ -210,13 +209,13 @@ function BulkUpload({ formats, onSwitchToSingle }: { formats: StatementFormat[];
   return (
     <form onSubmit={handleSubmit} className="max-w-2xl space-y-5">
       {/* File picker */}
-      <div className="bg-gray-900 rounded-xl border border-gray-800 p-6 flex flex-col items-center gap-4 text-center">
-        <div className="w-12 h-12 rounded-full bg-gray-800 flex items-center justify-center text-xl">📂</div>
+      <div className="bg-slate-900 rounded-xl border border-slate-800 p-6 flex flex-col items-center gap-4 text-center">
+        <div className="w-12 h-12 rounded-full bg-slate-800 flex items-center justify-center text-xl">📂</div>
         <div>
-          <p className="text-sm text-gray-300 font-medium">
+          <p className="text-sm text-slate-300 font-medium">
             {selectedFiles.length > 0 ? `${selectedFiles.length} file${selectedFiles.length !== 1 ? "s" : ""} selected` : "Select PDF statements"}
           </p>
-          <p className="text-xs text-gray-500 mt-1">All files must be from the same account and format</p>
+          <p className="text-xs text-slate-500 mt-1">All files must be from the same account and format</p>
         </div>
         <label className="cursor-pointer bg-indigo-600 hover:bg-indigo-500 px-4 py-2 rounded-lg text-sm font-medium transition-colors">
           Choose files
@@ -225,21 +224,21 @@ function BulkUpload({ formats, onSwitchToSingle }: { formats: StatementFormat[];
         {selectedFiles.length > 0 && (
           <div className="w-full text-left space-y-1 max-h-40 overflow-y-auto">
             {selectedFiles.map((f, i) => (
-              <p key={i} className="text-xs text-gray-400 truncate">{f.name}</p>
+              <p key={i} className="text-xs text-slate-400 truncate">{f.name}</p>
             ))}
           </div>
         )}
       </div>
 
       {/* Format + account */}
-      <div className="bg-gray-900 rounded-xl border border-gray-800 p-4 space-y-3">
+      <div className="bg-slate-900 rounded-xl border border-slate-800 p-4 space-y-3">
         <div>
-          <label className="text-xs text-gray-400">Format *</label>
+          <label className="text-xs text-slate-400">Format *</label>
           <select
             required
             value={formatId}
             onChange={(e) => setFormatId(e.target.value ? Number(e.target.value) : "")}
-            className="mt-1 w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm"
+            className="mt-1 w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm"
           >
             <option value="">— Select a saved format —</option>
             {formats.map((f) => (
@@ -249,7 +248,7 @@ function BulkUpload({ formats, onSwitchToSingle }: { formats: StatementFormat[];
         </div>
         <div>
           <div className="flex items-center gap-2">
-            <label className="text-xs text-gray-400">Account number *</label>
+            <label className="text-xs text-slate-400">Account number *</label>
             {accountDetected && (
               <span className="text-xs text-green-500">auto-detected</span>
             )}
@@ -260,35 +259,35 @@ function BulkUpload({ formats, onSwitchToSingle }: { formats: StatementFormat[];
             value={accountNumber}
             onChange={(e) => { setAccountNumber(e.target.value); setAccountDetected(false); }}
             placeholder="e.g. 12345678"
-            className="mt-1 w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm"
+            className="mt-1 w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm"
           />
         </div>
         {needsYear && (
           <div>
-            <label className="text-xs text-gray-400">Statement year *</label>
+            <label className="text-xs text-slate-400">Statement year *</label>
             <input
               type="number"
               required
               value={year}
               onChange={(e) => setYear(Number(e.target.value))}
-              className="mt-1 w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm"
+              className="mt-1 w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm"
             />
-            <p className="text-xs text-gray-500 mt-1">All selected files will use this year</p>
+            <p className="text-xs text-slate-500 mt-1">All selected files will use this year</p>
           </div>
         )}
       </div>
 
       {/* Skip patterns */}
-      <div className="bg-gray-900 rounded-xl border border-gray-800 p-4 space-y-2">
-        <label className="text-xs text-gray-400 font-medium uppercase tracking-wide">Skip rows</label>
+      <div className="bg-slate-900 rounded-xl border border-slate-800 p-4 space-y-2">
+        <label className="text-xs text-slate-400 font-medium uppercase tracking-wide">Skip rows</label>
         <input
           type="text"
           value={skipPatterns}
           onChange={(e) => setSkipPatterns(e.target.value)}
           placeholder="e.g. Opening balance, Closing balance"
-          className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm"
+          className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm"
         />
-        <p className="text-xs text-gray-600">Comma-separated descriptions to exclude across all files</p>
+        <p className="text-xs text-slate-600">Comma-separated descriptions to exclude across all files</p>
       </div>
 
       {error && <p className="text-sm text-red-400">{error}</p>}
@@ -409,10 +408,10 @@ export default function Upload() {
       <div className="max-w-2xl space-y-5">
         <h1 className="text-lg font-semibold">Upload bank statement</h1>
 
-        <div className="bg-gray-900 rounded-xl border border-green-800 p-4 flex items-center justify-between">
+        <div className="bg-slate-900 rounded-xl border border-green-800 p-4 flex items-center justify-between">
           <p className="text-green-400 text-sm font-medium">
             {result.added} transaction{result.added !== 1 ? "s" : ""} imported
-            {result.skipped > 0 && <span className="text-gray-500 font-normal"> · {result.skipped} duplicates skipped</span>}
+            {result.skipped > 0 && <span className="text-slate-500 font-normal"> · {result.skipped} duplicates skipped</span>}
           </p>
           <button onClick={reset} className="text-sm text-indigo-400 hover:text-indigo-300">
             Upload another
@@ -420,10 +419,10 @@ export default function Upload() {
         </div>
 
         {result.transactions.length > 0 && (
-          <div className="bg-gray-900 rounded-xl border border-gray-800 overflow-hidden">
+          <div className="bg-slate-900 rounded-xl border border-slate-800 overflow-hidden">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-gray-800 text-xs text-gray-500 uppercase tracking-wide">
+                <tr className="border-b border-slate-800 text-xs text-slate-500 uppercase tracking-wide">
                   <th className="px-4 py-2.5 text-left font-medium">Date</th>
                   <th className="px-4 py-2.5 text-left font-medium">Description</th>
                   <th className="px-4 py-2.5 text-right font-medium">Amount</th>
@@ -431,9 +430,9 @@ export default function Upload() {
               </thead>
               <tbody>
                 {result.transactions.map((t) => (
-                  <tr key={t.id} className="border-b border-gray-800/50 last:border-0 hover:bg-gray-800/30">
-                    <td className="px-4 py-2 text-gray-400 whitespace-nowrap">{t.date}</td>
-                    <td className="px-4 py-2 text-gray-300 truncate max-w-[280px]">{t.description}</td>
+                  <tr key={t.id} className="border-b border-slate-800/50 last:border-0 hover:bg-slate-800/30">
+                    <td className="px-4 py-2 text-slate-400 whitespace-nowrap">{t.date}</td>
+                    <td className="px-4 py-2 text-slate-300 truncate max-w-[280px]">{t.description}</td>
                     <td className={`px-4 py-2 text-right tabular-nums font-medium ${t.amount >= 0 ? "text-green-400" : "text-red-400"}`}>
                       {t.amount >= 0 ? "+" : ""}£{Math.abs(t.amount).toFixed(2)}
                     </td>
@@ -451,9 +450,9 @@ export default function Upload() {
     return (
       <div className="max-w-lg space-y-6">
         <h1 className="text-lg font-semibold">Upload bank statement</h1>
-        <div className="bg-gray-900 rounded-xl border border-gray-800 p-8 flex flex-col items-center gap-3">
+        <div className="bg-slate-900 rounded-xl border border-slate-800 p-8 flex flex-col items-center gap-3">
           <div className="w-6 h-6 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
-          <p className="text-sm text-gray-400">Analysing statement…</p>
+          <p className="text-sm text-slate-400">Analysing statement…</p>
         </div>
       </div>
     );
@@ -467,7 +466,7 @@ export default function Upload() {
         <h1 className="text-lg font-semibold">Upload bank statement</h1>
 
         {/* Format selector */}
-        <div className="bg-gray-900 rounded-xl border border-gray-800 p-4 flex items-center gap-4">
+        <div className="bg-slate-900 rounded-xl border border-slate-800 p-4 flex items-center gap-4">
           <div className="flex items-center gap-2 shrink-0">
             {matched_format ? (
               <span className="text-xs font-medium bg-green-900 text-green-300 px-2 py-0.5 rounded-full">
@@ -481,7 +480,7 @@ export default function Upload() {
           </div>
 
           <select
-            className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm"
+            className="flex-1 bg-slate-800 border border-slate-700 rounded-lg px-3 py-1.5 text-sm"
             value={matched_format?.id ?? ""}
             onChange={(e) => {
               if (!e.target.value) return;
@@ -497,50 +496,50 @@ export default function Upload() {
             ))}
           </select>
 
-          <span className="text-xs text-gray-500 shrink-0">{total_rows} rows</span>
+          <span className="text-xs text-slate-500 shrink-0">{total_rows} rows</span>
         </div>
 
         <form onSubmit={handleConfirm} className="space-y-5">
           {/* Account number + year */}
-          <div className="bg-gray-900 rounded-xl border border-gray-800 p-4 grid grid-cols-2 gap-4">
+          <div className="bg-slate-900 rounded-xl border border-slate-800 p-4 grid grid-cols-2 gap-4">
             <div>
-              <label className="text-xs text-gray-400">Account number *</label>
+              <label className="text-xs text-slate-400">Account number *</label>
               <input
                 type="text"
                 required
                 value={accountNumber}
                 onChange={(e) => setAccountNumber(e.target.value)}
                 placeholder="e.g. 12345678"
-                className="mt-1 w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm"
+                className="mt-1 w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm"
               />
             </div>
             {needs_year && (
               <div>
-                <label className="text-xs text-gray-400">Statement year *</label>
+                <label className="text-xs text-slate-400">Statement year *</label>
                 <input
                   type="number"
                   required
                   value={year}
                   onChange={(e) => setYear(Number(e.target.value))}
-                  className="mt-1 w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm"
+                  className="mt-1 w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm"
                 />
-                <p className="text-xs text-gray-500 mt-1">Dates in this PDF have no year</p>
+                <p className="text-xs text-slate-500 mt-1">Dates in this PDF have no year</p>
               </div>
             )}
           </div>
 
           {/* Column mapping table */}
-          <div className="bg-gray-900 rounded-xl border border-gray-800 overflow-x-auto">
-            <div className="px-4 py-3 border-b border-gray-800">
-              <p className="text-xs text-gray-400 font-medium uppercase tracking-wide">Column mapping</p>
-              <p className="text-xs text-gray-600 mt-0.5">Assign a role to each column. Sample rows shown below.</p>
+          <div className="bg-slate-900 rounded-xl border border-slate-800 overflow-x-auto">
+            <div className="px-4 py-3 border-b border-slate-800">
+              <p className="text-xs text-slate-400 font-medium uppercase tracking-wide">Column mapping</p>
+              <p className="text-xs text-slate-600 mt-0.5">Assign a role to each column. Sample rows shown below.</p>
             </div>
             <table className="w-full text-xs">
               <thead>
                 <tr>
                   {column_headers.map((header, colIdx) => (
                     <th key={colIdx} className="px-3 pt-3 pb-2 text-left align-top font-normal min-w-[120px]">
-                      <div className="text-gray-300 font-medium mb-1.5 truncate" title={header}>
+                      <div className="text-slate-300 font-medium mb-1.5 truncate" title={header}>
                         {header || `Col ${colIdx}`}
                       </div>
                       <select
@@ -548,10 +547,10 @@ export default function Upload() {
                         onChange={(e) =>
                           setRoleMap((prev) => ({ ...prev, [colIdx]: e.target.value as ColumnRole }))
                         }
-                        className={`w-full bg-gray-800 border border-gray-700 rounded px-1.5 py-1 text-xs ${roleColor(roleMap[colIdx] ?? "ignore")}`}
+                        className={`w-full bg-slate-800 border border-slate-700 rounded px-1.5 py-1 text-xs ${roleColor(roleMap[colIdx] ?? "ignore")}`}
                       >
                         {ROLES.map((r) => (
-                          <option key={r.value} value={r.value} className="text-gray-200">
+                          <option key={r.value} value={r.value} className="text-slate-200">
                             {r.label}
                           </option>
                         ))}
@@ -562,7 +561,7 @@ export default function Upload() {
               </thead>
               <tbody>
                 {sample_rows.map((row, rowIdx) => (
-                  <tr key={rowIdx} className={rowIdx % 2 === 0 ? "bg-gray-900" : "bg-gray-800/40"}>
+                  <tr key={rowIdx} className={rowIdx % 2 === 0 ? "bg-slate-900" : "bg-slate-800/40"}>
                     {column_headers.map((_, colIdx) => (
                       <td
                         key={colIdx}
@@ -579,8 +578,8 @@ export default function Upload() {
           </div>
 
           {/* Skip patterns */}
-          <div className="bg-gray-900 rounded-xl border border-gray-800 p-4 space-y-2">
-            <label className="text-xs text-gray-400 font-medium uppercase tracking-wide">
+          <div className="bg-slate-900 rounded-xl border border-slate-800 p-4 space-y-2">
+            <label className="text-xs text-slate-400 font-medium uppercase tracking-wide">
               Skip rows
             </label>
             <input
@@ -588,23 +587,23 @@ export default function Upload() {
               value={skipPatterns}
               onChange={(e) => setSkipPatterns(e.target.value)}
               placeholder="e.g. Opening balance, Closing balance, Transfer"
-              className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm"
+              className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm"
             />
-            <p className="text-xs text-gray-600">
+            <p className="text-xs text-slate-600">
               Comma-separated descriptions to exclude. Rows with no amount are already skipped automatically.
             </p>
           </div>
 
           {/* Save format */}
-          <div className="bg-gray-900 rounded-xl border border-gray-800 p-4 space-y-3">
+          <div className="bg-slate-900 rounded-xl border border-slate-800 p-4 space-y-3">
             <label className="flex items-center gap-2 cursor-pointer select-none">
               <input
                 type="checkbox"
                 checked={saveFormat}
                 onChange={(e) => setSaveFormat(e.target.checked)}
-                className="rounded border-gray-600 bg-gray-700 text-indigo-500"
+                className="rounded border-slate-600 bg-slate-700 text-indigo-500"
               />
-              <span className="text-sm text-gray-300">Save this column mapping for future uploads</span>
+              <span className="text-sm text-slate-300">Save this column mapping for future uploads</span>
             </label>
             {saveFormat && (
               <input
@@ -613,7 +612,7 @@ export default function Upload() {
                 value={formatName}
                 onChange={(e) => setFormatName(e.target.value)}
                 required={saveFormat}
-                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm"
+                className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm"
               />
             )}
           </div>
@@ -624,7 +623,7 @@ export default function Upload() {
             <button
               type="button"
               onClick={reset}
-              className="px-4 py-2.5 rounded-lg text-sm border border-gray-700 hover:bg-gray-800 transition-colors"
+              className="px-4 py-2.5 rounded-lg text-sm border border-slate-700 hover:bg-slate-800 transition-colors"
             >
               Back
             </button>
@@ -646,16 +645,16 @@ export default function Upload() {
     <div className={`${tab === "single" ? "max-w-lg" : "max-w-4xl"} space-y-6`}>
       <div className="flex items-center justify-between">
         <h1 className="text-lg font-semibold">Upload bank statement</h1>
-        <div className="flex rounded-lg border border-gray-700 overflow-hidden text-sm">
+        <div className="flex rounded-lg border border-slate-700 overflow-hidden text-sm">
           <button
             onClick={() => setTab("single")}
-            className={`px-3 py-1.5 transition-colors ${tab === "single" ? "bg-gray-700 text-white" : "text-gray-400 hover:text-gray-200"}`}
+            className={`px-3 py-1.5 transition-colors ${tab === "single" ? "bg-slate-700 text-white" : "text-slate-400 hover:text-slate-200"}`}
           >
             Single
           </button>
           <button
             onClick={() => setTab("bulk")}
-            className={`px-3 py-1.5 transition-colors ${tab === "bulk" ? "bg-gray-700 text-white" : "text-gray-400 hover:text-gray-200"}`}
+            className={`px-3 py-1.5 transition-colors ${tab === "bulk" ? "bg-slate-700 text-white" : "text-slate-400 hover:text-slate-200"}`}
           >
             Bulk
           </button>
@@ -665,13 +664,13 @@ export default function Upload() {
       {tab === "bulk" ? (
         <BulkUpload formats={formats} onSwitchToSingle={() => setTab("single")} />
       ) : (
-        <div className="bg-gray-900 rounded-xl border border-gray-800 p-8 flex flex-col items-center gap-4 text-center">
-          <div className="w-12 h-12 rounded-full bg-gray-800 flex items-center justify-center text-xl">
+        <div className="bg-slate-900 rounded-xl border border-slate-800 p-8 flex flex-col items-center gap-4 text-center">
+          <div className="w-12 h-12 rounded-full bg-slate-800 flex items-center justify-center text-xl">
             📄
           </div>
           <div>
-            <p className="text-sm text-gray-300 font-medium">Drop a PDF statement</p>
-            <p className="text-xs text-gray-500 mt-1">Any bank — column mapping is detected automatically</p>
+            <p className="text-sm text-slate-300 font-medium">Drop a PDF statement</p>
+            <p className="text-xs text-slate-500 mt-1">Any bank — column mapping is detected automatically</p>
           </div>
           <label className="cursor-pointer bg-indigo-600 hover:bg-indigo-500 px-4 py-2 rounded-lg text-sm font-medium transition-colors">
             Choose file

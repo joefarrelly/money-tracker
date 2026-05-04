@@ -114,6 +114,24 @@ class PayslipLineItem(Base):
     salary = relationship("Salary", back_populates="line_items")
 
 
+class EmailImport(Base):
+    __tablename__ = "email_imports"
+
+    id = Column(Integer, primary_key=True)
+    message_id = Column(String(500), unique=True, nullable=False)
+    subject = Column(String(500))
+    sender = Column(String(255))
+    received_at = Column(DateTime)
+    filename = Column(String(255))
+    import_type = Column(String(20))   # "payslip" | "bank_statement"
+    status = Column(String(20), default="pending")  # "pending" | "imported" | "skipped" | "failed"
+    error_message = Column(Text)
+    file_path = Column(String(500))
+    raw_data = Column(JSON)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    imported_at = Column(DateTime)
+
+
 class StatementFormat(Base):
     """
     Saved column mapping for a bank statement format.

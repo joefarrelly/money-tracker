@@ -42,6 +42,7 @@ def _migrate():
         ("transactions", "is_transfer", "BOOLEAN DEFAULT 0"),
         ("transactions", "transfer_counterpart_id", "INTEGER"),
         ("transactions", "transfer_ignored", "BOOLEAN DEFAULT 0"),
+        ("email_imports", "imported_at", "DATETIME"),
     ]
     with engine.connect() as conn:
         for table, column, col_type in migrations:

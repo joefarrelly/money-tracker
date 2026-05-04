@@ -68,6 +68,9 @@ def monthly_summary(db: Session, year: int, month: int) -> dict:
             "actual_amount": actual,
             "found_this_month": actual > 0,
             "is_over": actual > 0 and actual > r.monthly_cost * 1.15,
+            "category_id": r.category_id,
+            "category_name": r.category.name if r.category else None,
+            "category_color": r.category.color if r.category else None,
         })
 
     return {

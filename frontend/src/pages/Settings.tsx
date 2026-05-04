@@ -35,10 +35,10 @@ function EditableRow({
   const cancel = () => { setDraft(value); setEditing(false); };
 
   return (
-    <tr className="border-b border-gray-800/50 hover:bg-gray-800/30">
+    <tr className="border-b border-slate-800/50 hover:bg-slate-800/30">
       <td className="px-4 py-3">
-        <span className="text-sm font-mono text-gray-300">{label}</span>
-        {sublabel && <span className="ml-2 text-xs text-gray-600">{sublabel}</span>}
+        <span className="text-sm font-mono text-slate-300">{label}</span>
+        {sublabel && <span className="ml-2 text-xs text-slate-600">{sublabel}</span>}
       </td>
       <td className="px-4 py-3">
         <div className="flex items-center gap-2">
@@ -54,8 +54,8 @@ function EditableRow({
             placeholder={!editing ? "—" : undefined}
             className={
               editing
-                ? "bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm w-48 text-gray-100"
-                : "bg-transparent border-transparent text-sm text-gray-200 w-48 cursor-default placeholder-gray-600 focus:outline-none"
+                ? "bg-slate-800 border border-slate-600 rounded px-2 py-1 text-sm w-48 text-slate-100"
+                : "bg-transparent border-transparent text-sm text-slate-200 w-48 cursor-default placeholder-gray-600 focus:outline-none"
             }
           />
           {editing ? (
@@ -67,14 +67,14 @@ function EditableRow({
               >
                 {saving ? "…" : "Save"}
               </button>
-              <button onClick={cancel} className="text-xs text-gray-500 hover:text-gray-300">
+              <button onClick={cancel} className="text-xs text-slate-500 hover:text-slate-300">
                 Cancel
               </button>
             </>
           ) : (
             <button
               onClick={() => { setDraft(value); setEditing(true); }}
-              className="text-xs text-gray-600 hover:text-gray-300"
+              className="text-xs text-slate-600 hover:text-slate-300"
             >
               Edit
             </button>
@@ -83,7 +83,7 @@ function EditableRow({
       </td>
       {onDelete && (
         <td className="px-4 py-3">
-          <button onClick={onDelete} className="text-xs text-gray-600 hover:text-red-400">
+          <button onClick={onDelete} className="text-xs text-slate-600 hover:text-red-400">
             Delete
           </button>
         </td>
@@ -124,16 +124,16 @@ export default function Settings() {
       {/* NI number names */}
       <section className="space-y-4">
         <div>
-          <h2 className="text-sm font-medium text-gray-300">NI number names</h2>
-          <p className="text-xs text-gray-500 mt-0.5">
+          <h2 className="text-sm font-medium text-slate-300">NI number names</h2>
+          <p className="text-xs text-slate-500 mt-0.5">
             Assign a name to each NI number seen in your payslips.
           </p>
         </div>
 
-        <div className="bg-gray-900 rounded-xl border border-gray-800 overflow-hidden">
+        <div className="bg-slate-900 rounded-xl border border-slate-800 overflow-hidden">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-gray-800 text-left text-gray-400">
+              <tr className="border-b border-slate-800 text-left text-slate-400">
                 <th className="px-4 py-3">NI number</th>
                 <th className="px-4 py-3">Name</th>
               </tr>
@@ -149,7 +149,7 @@ export default function Settings() {
               ))}
               {niRows.length === 0 && (
                 <tr>
-                  <td colSpan={2} className="px-4 py-6 text-gray-600 text-sm text-center">
+                  <td colSpan={2} className="px-4 py-6 text-slate-600 text-sm text-center">
                     No payslips imported yet.
                   </td>
                 </tr>
@@ -162,16 +162,16 @@ export default function Settings() {
       {/* Account nicknames */}
       <section className="space-y-4">
         <div>
-          <h2 className="text-sm font-medium text-gray-300">Account nicknames</h2>
-          <p className="text-xs text-gray-500 mt-0.5">
+          <h2 className="text-sm font-medium text-slate-300">Account nicknames</h2>
+          <p className="text-xs text-slate-500 mt-0.5">
             Give your bank accounts a friendly name shown across the app.
           </p>
         </div>
 
-        <div className="bg-gray-900 rounded-xl border border-gray-800 overflow-hidden">
+        <div className="bg-slate-900 rounded-xl border border-slate-800 overflow-hidden">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-gray-800 text-left text-gray-400">
+              <tr className="border-b border-slate-800 text-left text-slate-400">
                 <th className="px-4 py-3">Account number</th>
                 <th className="px-4 py-3">Nickname</th>
               </tr>
@@ -188,7 +188,7 @@ export default function Settings() {
               ))}
               {accounts.length === 0 && (
                 <tr>
-                  <td colSpan={2} className="px-4 py-6 text-gray-600 text-sm text-center">
+                  <td colSpan={2} className="px-4 py-6 text-slate-600 text-sm text-center">
                     No accounts yet.
                   </td>
                 </tr>

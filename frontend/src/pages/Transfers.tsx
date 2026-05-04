@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Spinner } from "../components/Spinner";
 import {
   getTransferCandidates,
   getConfirmedTransfers,
@@ -18,10 +19,10 @@ function TxnCell({ t, side }: { t: TransferTxn; side: "out" | "in" }) {
         <span className={`text-sm font-semibold ${side === "out" ? "text-red-400" : "text-green-400"}`}>
           {side === "out" ? "−" : "+"}{fmt(t.amount)}
         </span>
-        <span className="text-xs text-gray-500">{t.date}</span>
+        <span className="text-xs text-slate-500">{t.date}</span>
       </div>
-      <p className="text-xs text-gray-300 truncate">{t.description}</p>
-      <p className="text-xs text-gray-500 mt-0.5">{t.account_name}</p>
+      <p className="text-xs text-slate-300 truncate">{t.description}</p>
+      <p className="text-xs text-slate-500 mt-0.5">{t.account_name}</p>
     </div>
   );
 }
@@ -74,7 +75,7 @@ export default function Transfers() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-lg font-semibold">Transfers</h1>
-          <p className="text-sm text-gray-400 mt-0.5">
+          <p className="text-sm text-slate-400 mt-0.5">
             Internal account-to-account movements excluded from spending totals
           </p>
         </div>
@@ -87,12 +88,12 @@ export default function Transfers() {
         </button>
       </div>
 
-      {loading && <p className="text-gray-400 text-sm">Loading…</p>}
+      {loading && <Spinner />}
 
       {/* Candidates */}
       {!loading && (
         <section>
-          <h2 className="text-sm font-medium text-gray-300 mb-3">
+          <h2 className="text-sm font-medium text-slate-300 mb-3">
             Candidates
             {candidates.length > 0 && (
               <span className="ml-2 text-xs text-yellow-400 bg-yellow-900/30 px-2 py-0.5 rounded-full">
@@ -102,7 +103,7 @@ export default function Transfers() {
           </h2>
 
           {candidates.length === 0 ? (
-            <div className="bg-gray-900 border border-gray-800 rounded-xl px-4 py-6 text-center text-sm text-gray-500">
+            <div className="bg-slate-900 border border-slate-800 rounded-xl px-4 py-6 text-center text-sm text-slate-500">
               No transfer candidates found. Click "Auto-detect" after uploading statements from multiple accounts.
             </div>
           ) : (
@@ -110,14 +111,14 @@ export default function Transfers() {
               {candidates.map((c) => (
                 <div
                   key={`${c.txn_out.id}-${c.txn_in.id}`}
-                  className="bg-gray-900 border border-gray-800 rounded-xl p-4"
+                  className="bg-slate-900 border border-slate-800 rounded-xl p-4"
                 >
                   <div className="flex items-center gap-3">
                     <TxnCell t={c.txn_out} side="out" />
                     <div className="flex flex-col items-center gap-1 flex-shrink-0">
-                      <span className="text-gray-500 text-lg">⇄</span>
+                      <span className="text-slate-500 text-lg">⇄</span>
                       {c.day_diff > 0 && (
-                        <span className="text-xs text-gray-600">{c.day_diff}d apart</span>
+                        <span className="text-xs text-slate-600">{c.day_diff}d apart</span>
                       )}
                     </div>
                     <TxnCell t={c.txn_in} side="in" />
@@ -127,7 +128,7 @@ export default function Transfers() {
                     <div className="flex gap-3">
                       <button
                         onClick={() => handleIgnore(c)}
-                        className="text-sm text-gray-500 hover:text-gray-300 transition-colors"
+                        className="text-sm text-slate-500 hover:text-slate-300 transition-colors"
                       >
                         Not a transfer
                       </button>
@@ -149,15 +150,15 @@ export default function Transfers() {
       {/* Confirmed */}
       {!loading && confirmed.length > 0 && (
         <section>
-          <h2 className="text-sm font-medium text-gray-300 mb-3">
+          <h2 className="text-sm font-medium text-slate-300 mb-3">
             Confirmed transfers
-            <span className="ml-2 text-xs text-gray-500">({confirmed.length})</span>
+            <span className="ml-2 text-xs text-slate-500">({confirmed.length})</span>
           </h2>
 
-          <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+          <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-gray-800 text-xs text-gray-500 uppercase tracking-wide">
+                <tr className="border-b border-slate-800 text-xs text-slate-500 uppercase tracking-wide">
                   <th className="px-4 py-3 text-left">Date</th>
                   <th className="px-4 py-3 text-left">From</th>
                   <th className="px-4 py-3 text-right">Amount</th>
@@ -175,29 +176,29 @@ export default function Transfers() {
                   const toDesc = cf.txn_in?.description;
 
                   return (
-                    <tr key={cf.primary_id} className="border-b border-gray-800/50 last:border-0 hover:bg-gray-800/30">
-                      <td className="px-4 py-3 text-gray-400 tabular-nums">{date}</td>
+                    <tr key={cf.primary_id} className="border-b border-slate-800/50 last:border-0 hover:bg-slate-800/30">
+                      <td className="px-4 py-3 text-slate-400 tabular-nums">{date}</td>
                       <td className="px-4 py-3">
-                        <p className="text-gray-200 truncate max-w-[180px]">{fromDesc}</p>
-                        <p className="text-xs text-gray-500">{fromName}</p>
+                        <p className="text-slate-200 truncate max-w-[180px]">{fromDesc}</p>
+                        <p className="text-xs text-slate-500">{fromName}</p>
                       </td>
-                      <td className="px-4 py-3 text-right font-medium tabular-nums text-gray-300">
+                      <td className="px-4 py-3 text-right font-medium tabular-nums text-slate-300">
                         {fmt(amount)}
                       </td>
                       <td className="px-4 py-3">
                         {toDesc ? (
                           <>
-                            <p className="text-gray-200 truncate max-w-[180px]">{toDesc}</p>
-                            <p className="text-xs text-gray-500">{toName}</p>
+                            <p className="text-slate-200 truncate max-w-[180px]">{toDesc}</p>
+                            <p className="text-xs text-slate-500">{toName}</p>
                           </>
                         ) : (
-                          <p className="text-gray-500 italic">{toName}</p>
+                          <p className="text-slate-500 italic">{toName}</p>
                         )}
                       </td>
                       <td className="px-4 py-3 text-right">
                         <button
                           onClick={() => handleUnlink(cf.primary_id)}
-                          className="text-xs text-gray-600 hover:text-red-400 transition-colors"
+                          className="text-xs text-slate-600 hover:text-red-400 transition-colors"
                         >
                           Unlink
                         </button>
@@ -219,7 +220,7 @@ function ConfidenceBadge({ confidence }: { confidence: number }) {
   const color =
     pct >= 85 ? "text-emerald-400 bg-emerald-900/30" :
     pct >= 60 ? "text-yellow-400 bg-yellow-900/30" :
-                "text-gray-400 bg-gray-800";
+                "text-slate-400 bg-slate-800";
   return (
     <span className={`text-xs px-2 py-0.5 rounded-full ${color}`}>
       {pct}% confidence

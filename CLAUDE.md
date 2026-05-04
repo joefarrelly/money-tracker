@@ -4,9 +4,9 @@
 Personal finance tracker that consolidates:
 - Bank statement PDF uploads (Barclays, Chase)
 - Payslip PDF uploads (NordHealth / Provet Cloud format) with full line-item breakdown
-- Salary records (manual entry)
-- Auto-detected recurring expenses
+- Auto-detected recurring expenses with category assignment
 - Disposable income calculation (salary net − recurring costs)
+- Transfer detection to exclude internal movements from totals
 
 ## Stack
 - **Backend:** FastAPI + SQLAlchemy + SQLite (`backend/money_tracker.db`)
@@ -52,18 +52,31 @@ backend/
 ```
 frontend/src/
   pages/            # Dashboard, Transactions, Upload, Recurring, Salaries, Settings, Transfers
-  api/client.ts     # Axios wrapper for all API calls
+  components/       # Shared components: Spinner
+  api/client.ts     # fetch wrapper with 60s GET cache + auto-invalidate on mutations
   types/index.ts    # Shared TypeScript types
 ```
+
+## Design System
+- **Palette:** Tailwind `slate-*` throughout (blue-tinted dark, not pure gray)
+- **Background:** `slate-950`, cards `slate-900`, inputs `slate-800`
+- **Borders:** `slate-800` / `slate-700`
+- **Accent:** indigo/violet — nav active state, buttons, spinner, gradient on logo
+- **Stat cards:** coloured left border per meaning — emerald (salary), red (spent), sky (net flow), violet (savings rate)
+- **Nav:** sticky, `slate-900/95` with backdrop blur; active item is indigo pill
 
 ## Key Decisions
 - Transactions use a unified `amount` field: positive = money in, negative = money out.
 - Duplicate detection on upload: `(account_id, date, description, amount)` tuple.
 - Recurring detection: merchant normalisation + monthly cadence (20–40 day gaps, <20% amount variance, 3+ occurrences).
 - Disposable income = net salary − sum of active recurring expense monthly costs.
-- Payslip duplicate detection: `(date, ni_number)` at app level + partial unique DB index `WHERE ni_number IS NOT NULL`. Manual entries fall back to `(date, employer)`.
+- Payslip entry is upload-only (no manual form). Single: `POST /api/salaries/upload-payslip`. Bulk: `POST /api/salaries/bulk-upload-payslips`.
+- Payslip duplicate detection: `(date, ni_number)` at app level + partial unique DB index `WHERE ni_number IS NOT NULL`.
 - NI number is the per-person identity key for payslips (supports multiple people, e.g. partners). Mapped to display names via `PersonIdentity` in Settings.
 - Transfer detection: transactions flagged `is_transfer=True` are excluded from monthly totals and category breakdowns so they don't inflate income/spending.
+
+## API Response Cache (`api/client.ts`)
+GET responses are cached in memory for 60 seconds keyed by URL. Any non-GET request via `request()` clears the whole cache. Raw fetch upload functions (`uploadPayslip`, `bulkUploadPayslips`, `bulkUpload`) also call `cache.clear()` on success. Export `invalidateCache()` for manual clearing if needed.
 
 ## PDF Parsing
 The upload flow is a two-step preview → confirm pattern:
@@ -85,20 +98,28 @@ Built-in formats for Barclays and Chase are seeded on startup. User-defined form
 
 NI number extracted from "NI Letter & No: A PB175845B" — strips the leading category letter, stores just the NI number (`PB175845B`). Earnings appear before the TOTAL row; deductions after.
 
-Single upload: `POST /api/salaries/upload-payslip`. Bulk (one-time): `POST /api/salaries/bulk-upload-payslips`.
-
 ## Settings
 `GET/PUT /api/settings/ni-numbers` — lists all NI numbers seen in payslips, create/update display name.
 Accounts already have nickname support via `PATCH /api/accounts/{id}`.
 
 ## Dashboard Summary API
 `GET /api/dashboard/summary?year=Y&month=M` returns an enriched `MonthlySummary`:
-- `recurring_actuals` — for each active recurring expense, matches transactions in the month by merchant pattern substring, computes `actual_amount`, `found_this_month`, and `is_over` (>15% above monthly cost)
-- `salary_entries[].line_items` — full payslip line items (earnings + deductions) included inline; empty for manual salary entries
+- `recurring_actuals` — for each active recurring expense, matches transactions in the month by merchant pattern substring, computes `actual_amount`, `found_this_month`, `is_over` (>15% above monthly cost), and `category_name`/`category_color`/`category_id`
+- `salary_entries[].line_items` — full payslip line items (earnings + deductions) included inline
 
-`GET /api/dashboard/trend?months=N` returns N months of `MonthlySummary` (without `recurring_actuals`/`line_items` for performance).
+`GET /api/dashboard/trend?months=N` returns N months of `MonthlySummary` (default 12, without `recurring_actuals`/`line_items` for performance).
+
+Dashboard fetches: current month summary, previous month summary, same-month-last-year summary (for YoY deltas), 12-month trend, and recent transactions — all in parallel.
 
 Currency values are formatted to 2 decimal places throughout the frontend (`toLocaleString` with `minimumFractionDigits: 2`).
+
+## Transactions API Filters
+`GET /api/transactions/` supports: `search`, `category_id` (-1 = uncategorised/NULL), `account_id`, `year`, `month`, `amount_type` ("in"/"out"), `hide_transfers` (bool), `page`, `per_page`.
+
+## Recurring Expenses
+`RecurringExpense` has `category_id` — assign categories in the Recurring page. Dashboard recurring widget has two tabs:
+- **This month** — found/pending/over status per item
+- **By category** — monthly cost grouped by category with % of salary bars
 
 ## Transfer Detection
 `services/transfers.py` scans all unreviewed transactions for candidate account-to-account transfers: negative on one account paired with a positive of the same amount (±£0.02) on a different account within ±2 days. Confidence score: 1.0 for same-day exact match, reduced by 0.15/day and proportional amount delta.

@@ -113,6 +113,9 @@ export interface RecurringActual {
   actual_amount: number;
   found_this_month: boolean;
   is_over: boolean;
+  category_id: number | null;
+  category_name: string | null;
+  category_color: string | null;
 }
 
 export interface MonthlySummary {
@@ -169,6 +172,21 @@ export interface BulkUploadResult {
   total_added: number;
   total_skipped: number;
   total_errors: number;
+}
+
+export interface EmailImport {
+  id: number;
+  message_id: string;
+  subject: string | null;
+  sender: string | null;
+  received_at: string | null;
+  filename: string | null;
+  import_type: "payslip" | "bank_statement" | null;
+  status: "pending" | "imported" | "skipped" | "failed";
+  error_message: string | null;
+  raw_data: Record<string, unknown> | null;
+  created_at: string;
+  imported_at: string | null;
 }
 
 export type ColumnRole =

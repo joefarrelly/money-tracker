@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { getMonthlySummary, getTrend, getRecentTransactions } from "../api/client";
+import { Spinner } from "../components/Spinner";
 import type { MonthlySummary, Transaction, RecurringActual, PayslipLineItem } from "../types";
 
 const MONTHS = [
@@ -20,35 +21,43 @@ function StatCard({
   label,
   value,
   color = "text-white",
+  accentClass = "",
   sub,
   delta,
+  yoyDelta,
   positiveIsGood = true,
 }: {
   label: string;
   value: string;
   color?: string;
+  accentClass?: string;
   sub?: string;
   delta?: number | null;
+  yoyDelta?: number | null;
   positiveIsGood?: boolean;
 }) {
-  let deltaEl: React.ReactNode = null;
-  if (delta != null && delta !== 0) {
-    const good = positiveIsGood ? delta > 0 : delta < 0;
-    const arrow = delta > 0 ? "↑" : "↓";
-    deltaEl = (
-      <span className={`text-xs font-medium ${good ? "text-emerald-400" : "text-red-400"}`}>
-        {arrow} {fmt(delta)}
+  const makeDelta = (d: number | null | undefined, label: string) => {
+    if (d == null || d === 0) return null;
+    const good = positiveIsGood ? d > 0 : d < 0;
+    const arrow = d > 0 ? "↑" : "↓";
+    return (
+      <span className={`text-xs ${good ? "text-emerald-400" : "text-red-400"}`}>
+        {arrow} {fmt(d)} <span className="text-slate-600">{label}</span>
       </span>
     );
-  }
+  };
+
+  const momEl = makeDelta(delta, "vs prev month");
+  const yoyEl = makeDelta(yoyDelta, "vs last year");
 
   return (
-    <div className="bg-gray-900 rounded-xl p-5 border border-gray-800">
-      <p className="text-xs text-gray-400 uppercase tracking-wide">{label}</p>
+    <div className={`bg-slate-900 rounded-xl p-5 border border-slate-800 ${accentClass}`}>
+      <p className="text-xs text-slate-400 uppercase tracking-wide">{label}</p>
       <p className={`text-2xl font-bold mt-1 ${color}`}>{value}</p>
-      <div className="flex items-center gap-2 mt-1">
-        {sub && <p className="text-xs text-gray-500">{sub}</p>}
-        {deltaEl}
+      <div className="mt-1 space-y-0.5">
+        {sub && <p className="text-xs text-slate-500">{sub}</p>}
+        {momEl}
+        {yoyEl}
       </div>
     </div>
   );
@@ -59,8 +68,8 @@ function StatCard({
 function CategoryBars({ breakdown }: { breakdown: MonthlySummary["category_breakdown"] }) {
   if (breakdown.length === 0) {
     return (
-      <div className="bg-gray-900 rounded-xl p-5 border border-gray-800 flex items-center justify-center h-full">
-        <p className="text-gray-500 text-sm">No spending data</p>
+      <div className="bg-slate-900 rounded-xl p-5 border border-slate-800 flex items-center justify-center h-full">
+        <p className="text-slate-500 text-sm">No spending data</p>
       </div>
     );
   }
@@ -68,19 +77,19 @@ function CategoryBars({ breakdown }: { breakdown: MonthlySummary["category_break
   const max = breakdown[0].amount;
 
   return (
-    <div className="bg-gray-900 rounded-xl p-5 border border-gray-800">
-      <h2 className="text-sm font-medium text-gray-300 mb-4">Spending by category</h2>
+    <div className="bg-slate-900 rounded-xl p-5 border border-slate-800">
+      <h2 className="text-sm font-medium text-slate-300 mb-4">Spending by category</h2>
       <div className="space-y-3">
         {breakdown.slice(0, 8).map((cat) => (
           <div key={cat.name}>
             <div className="flex justify-between text-xs mb-1">
-              <span className="text-gray-300 truncate max-w-[60%]">{cat.name}</span>
-              <span className="text-gray-400">
+              <span className="text-slate-300 truncate max-w-[60%]">{cat.name}</span>
+              <span className="text-slate-400">
                 {fmt(cat.amount)}
-                <span className="text-gray-600 ml-1">({cat.count})</span>
+                <span className="text-slate-600 ml-1">({cat.count})</span>
               </span>
             </div>
-            <div className="h-2 bg-gray-800 rounded-full overflow-hidden">
+            <div className="h-2 bg-slate-800 rounded-full overflow-hidden">
               <div
                 className="h-full rounded-full transition-all duration-500"
                 style={{
@@ -101,15 +110,15 @@ function CategoryBars({ breakdown }: { breakdown: MonthlySummary["category_break
 function PayslipBreakdown({ salaryEntries }: { salaryEntries: MonthlySummary["salary_entries"] }) {
   if (salaryEntries.length === 0) {
     return (
-      <div className="bg-gray-900 rounded-xl p-5 border border-gray-800 flex items-center justify-center h-full">
-        <p className="text-gray-500 text-sm">No payslip this month</p>
+      <div className="bg-slate-900 rounded-xl p-5 border border-slate-800 flex items-center justify-center h-full">
+        <p className="text-slate-500 text-sm">No payslip this month</p>
       </div>
     );
   }
 
   return (
-    <div className="bg-gray-900 rounded-xl p-5 border border-gray-800 space-y-5">
-      <h2 className="text-sm font-medium text-gray-300">Payslip breakdown</h2>
+    <div className="bg-slate-900 rounded-xl p-5 border border-slate-800 space-y-5">
+      <h2 className="text-sm font-medium text-slate-300">Payslip breakdown</h2>
       {salaryEntries.map((s) => {
         const earnings = s.line_items.filter((li) => li.line_type === "earning");
         const deductions = s.line_items.filter((li) => li.line_type === "deduction");
@@ -118,48 +127,42 @@ function PayslipBreakdown({ salaryEntries }: { salaryEntries: MonthlySummary["sa
         return (
           <div key={s.id}>
             {salaryEntries.length > 1 && (
-              <p className="text-xs text-gray-500 mb-2">{s.employer ?? "Employer"}</p>
+              <p className="text-xs text-slate-500 mb-2">{s.employer ?? "Employer"}</p>
             )}
 
             {hasItems ? (
               <div className="space-y-1 text-sm">
-                {/* Gross */}
                 {earnings.length > 0 && (
-                  <div className="flex justify-between text-gray-300">
+                  <div className="flex justify-between text-slate-300">
                     <span>Gross pay</span>
                     <span className="text-green-400 font-medium">
                       {fmt(earnings.reduce((a, li) => a + li.amount, 0))}
                     </span>
                   </div>
                 )}
-
-                {/* Deductions */}
                 {deductions.length > 0 && (
                   <div className="mt-2 space-y-1">
-                    <p className="text-xs text-gray-500 uppercase tracking-wide">Deductions</p>
+                    <p className="text-xs text-slate-500 uppercase tracking-wide">Deductions</p>
                     {deductions.map((li, i) => (
                       <DeductionRow key={i} li={li} />
                     ))}
                   </div>
                 )}
-
-                {/* Divider + net */}
-                <div className="border-t border-gray-700 mt-2 pt-2 flex justify-between font-semibold">
-                  <span className="text-gray-200">Net pay</span>
+                <div className="border-t border-slate-700 mt-2 pt-2 flex justify-between font-semibold">
+                  <span className="text-slate-200">Net pay</span>
                   <span className="text-emerald-400">{fmt(s.net_amount)}</span>
                 </div>
               </div>
             ) : (
-              /* Manual entry — no line items */
               <div className="space-y-1 text-sm">
                 {s.gross_amount != null && (
-                  <div className="flex justify-between text-gray-300">
+                  <div className="flex justify-between text-slate-300">
                     <span>Gross</span>
                     <span>{fmt(s.gross_amount)}</span>
                   </div>
                 )}
                 <div className="flex justify-between font-semibold">
-                  <span className="text-gray-200">Net pay</span>
+                  <span className="text-slate-200">Net pay</span>
                   <span className="text-emerald-400">{fmt(s.net_amount)}</span>
                 </div>
               </div>
@@ -173,7 +176,7 @@ function PayslipBreakdown({ salaryEntries }: { salaryEntries: MonthlySummary["sa
 
 function DeductionRow({ li }: { li: PayslipLineItem }) {
   return (
-    <div className="flex justify-between text-gray-400">
+    <div className="flex justify-between text-slate-400">
       <span className="truncate max-w-[65%]">{li.description}</span>
       <span className="text-red-400">−{fmt(li.amount)}</span>
     </div>
@@ -202,16 +205,15 @@ function SpendingProgress({
     spentPct >= 100 ? "bg-red-500" : spentPct >= 85 ? "bg-amber-500" : "bg-emerald-500";
 
   return (
-    <div className="bg-gray-900 rounded-xl p-5 border border-gray-800">
+    <div className="bg-slate-900 rounded-xl p-5 border border-slate-800">
       <div className="flex justify-between items-baseline mb-3">
-        <h2 className="text-sm font-medium text-gray-300">Spending vs salary</h2>
+        <h2 className="text-sm font-medium text-slate-300">Spending vs salary</h2>
         <span className={`text-sm font-semibold ${remaining >= 0 ? "text-emerald-400" : "text-red-400"}`}>
           {remaining >= 0 ? `${fmt(remaining)} remaining` : `${fmt(remaining)} over`}
         </span>
       </div>
 
-      {/* Stacked bar */}
-      <div className="h-3 bg-gray-800 rounded-full overflow-hidden flex">
+      <div className="h-3 bg-slate-800 rounded-full overflow-hidden flex">
         <div
           className="h-full bg-red-700 transition-all duration-500"
           style={{ width: `${recurringPct}%` }}
@@ -224,7 +226,7 @@ function SpendingProgress({
         />
       </div>
 
-      <div className="flex justify-between text-xs text-gray-500 mt-2">
+      <div className="flex justify-between text-xs text-slate-500 mt-2">
         <div className="flex gap-4">
           <span className="flex items-center gap-1">
             <span className="inline-block w-2 h-2 rounded-sm bg-red-700" />
@@ -245,10 +247,10 @@ function SpendingProgress({
 
 function RecentTransactions({ transactions }: { transactions: Transaction[] }) {
   return (
-    <div className="bg-gray-900 rounded-xl p-5 border border-gray-800">
-      <h2 className="text-sm font-medium text-gray-300 mb-3">Recent transactions</h2>
+    <div className="bg-slate-900 rounded-xl p-5 border border-slate-800">
+      <h2 className="text-sm font-medium text-slate-300 mb-3">Recent transactions</h2>
       {transactions.length === 0 ? (
-        <p className="text-gray-500 text-sm">No transactions this month</p>
+        <p className="text-slate-500 text-sm">No transactions this month</p>
       ) : (
         <div className="space-y-2">
           {transactions.map((t) => (
@@ -261,13 +263,13 @@ function RecentTransactions({ transactions }: { transactions: Transaction[] }) {
                   />
                 )}
                 <div className="min-w-0">
-                  <p className="text-sm text-gray-200 truncate">{t.description}</p>
-                  <p className="text-xs text-gray-500">{t.date}</p>
+                  <p className="text-sm text-slate-200 truncate">{t.description}</p>
+                  <p className="text-xs text-slate-500">{t.date}</p>
                 </div>
               </div>
               <span
                 className={`text-sm font-medium flex-shrink-0 ${
-                  t.amount >= 0 ? "text-green-400" : "text-gray-300"
+                  t.amount >= 0 ? "text-green-400" : "text-slate-300"
                 }`}
               >
                 {t.amount >= 0 ? "+" : "−"}
@@ -281,14 +283,16 @@ function RecentTransactions({ transactions }: { transactions: Transaction[] }) {
   );
 }
 
-// ── Recurring status ───────────────────────────────────────────────────────────
+// ── Recurring status + by-category (tabbed) ────────────────────────────────────
 
-function RecurringStatus({ actuals }: { actuals: RecurringActual[] }) {
+function RecurringStatus({ actuals, salary }: { actuals: RecurringActual[]; salary: number }) {
+  const [tab, setTab] = useState<"status" | "categories">("status");
+
   if (actuals.length === 0) {
     return (
-      <div className="bg-gray-900 rounded-xl p-5 border border-gray-800">
-        <h2 className="text-sm font-medium text-gray-300 mb-3">Recurring expenses</h2>
-        <p className="text-gray-500 text-sm">No recurring expenses tracked</p>
+      <div className="bg-slate-900 rounded-xl p-5 border border-slate-800">
+        <h2 className="text-sm font-medium text-slate-300 mb-3">Recurring expenses</h2>
+        <p className="text-slate-500 text-sm">No recurring expenses tracked</p>
       </div>
     );
   }
@@ -297,31 +301,100 @@ function RecurringStatus({ actuals }: { actuals: RecurringActual[] }) {
   const missing = actuals.filter((a) => !a.found_this_month);
   const over = actuals.filter((a) => a.is_over);
 
+  // Category breakdown
+  const catMap = new Map<string, { color: string; total: number; count: number }>();
+  for (const a of actuals) {
+    const key = a.category_name ?? "Uncategorised";
+    const color = a.category_color ?? "#6b7280";
+    const entry = catMap.get(key) ?? { color, total: 0, count: 0 };
+    catMap.set(key, { color, total: entry.total + a.monthly_cost, count: entry.count + 1 });
+  }
+  const catBreakdown = Array.from(catMap.entries())
+    .map(([name, v]) => ({ name, ...v }))
+    .sort((a, b) => b.total - a.total);
+  const totalRecurring = actuals.reduce((s, a) => s + a.monthly_cost, 0);
+
   return (
-    <div className="bg-gray-900 rounded-xl p-5 border border-gray-800">
+    <div className="bg-slate-900 rounded-xl p-5 border border-slate-800">
       <div className="flex items-center justify-between mb-3">
-        <h2 className="text-sm font-medium text-gray-300">Recurring this month</h2>
-        <div className="flex gap-2 text-xs">
-          <span className="text-emerald-400">{found.length} seen</span>
-          {over.length > 0 && <span className="text-amber-400">{over.length} over</span>}
-          {missing.length > 0 && <span className="text-gray-500">{missing.length} pending</span>}
+        <h2 className="text-sm font-medium text-slate-300">Recurring expenses</h2>
+        <div className="flex rounded-lg overflow-hidden border border-slate-700 text-xs">
+          <button
+            onClick={() => setTab("status")}
+            className={`px-3 py-1 transition-colors ${
+              tab === "status" ? "bg-gray-700 text-white" : "text-slate-400 hover:bg-slate-800"
+            }`}
+          >
+            This month
+          </button>
+          <button
+            onClick={() => setTab("categories")}
+            className={`px-3 py-1 transition-colors ${
+              tab === "categories" ? "bg-gray-700 text-white" : "text-slate-400 hover:bg-slate-800"
+            }`}
+          >
+            By category
+          </button>
         </div>
       </div>
 
-      <div className="space-y-2 max-h-72 overflow-y-auto">
-        {/* Over budget first */}
-        {over.map((a) => (
-          <RecurringRow key={a.id} a={a} />
-        ))}
-        {/* Found, not over */}
-        {found.filter((a) => !a.is_over).map((a) => (
-          <RecurringRow key={a.id} a={a} />
-        ))}
-        {/* Not found yet */}
-        {missing.map((a) => (
-          <RecurringRow key={a.id} a={a} />
-        ))}
-      </div>
+      {tab === "status" ? (
+        <>
+          <div className="flex gap-2 text-xs mb-3">
+            <span className="text-emerald-400">{found.length} seen</span>
+            {over.length > 0 && <span className="text-amber-400">{over.length} over</span>}
+            {missing.length > 0 && <span className="text-slate-500">{missing.length} pending</span>}
+          </div>
+          <div className="space-y-2 max-h-72 overflow-y-auto">
+            {over.map((a) => <RecurringRow key={a.id} a={a} />)}
+            {found.filter((a) => !a.is_over).map((a) => <RecurringRow key={a.id} a={a} />)}
+            {missing.map((a) => <RecurringRow key={a.id} a={a} />)}
+          </div>
+        </>
+      ) : (
+        <div className="space-y-3">
+          {catBreakdown.map((cat) => {
+            const pct = salary > 0 ? (cat.total / salary) * 100 : 0;
+            return (
+              <div key={cat.name}>
+                <div className="flex justify-between text-xs mb-1">
+                  <span className="flex items-center gap-1.5 text-slate-300">
+                    <span className="w-2 h-2 rounded-full" style={{ backgroundColor: cat.color }} />
+                    {cat.name}
+                    <span className="text-slate-600">({cat.count})</span>
+                  </span>
+                  <span className="text-slate-400">
+                    {fmt(cat.total)}/mo
+                    {salary > 0 && (
+                      <span className="text-slate-600 ml-1">{pct.toFixed(1)}%</span>
+                    )}
+                  </span>
+                </div>
+                <div className="h-2 bg-slate-800 rounded-full overflow-hidden">
+                  <div
+                    className="h-full rounded-full transition-all duration-500"
+                    style={{
+                      width: `${Math.min(pct * 3, 100)}%`,
+                      backgroundColor: cat.color,
+                    }}
+                  />
+                </div>
+              </div>
+            );
+          })}
+          <div className="border-t border-slate-800 pt-2 flex justify-between text-xs font-medium">
+            <span className="text-slate-400">Total recurring</span>
+            <span className="text-red-400">
+              {fmt(totalRecurring)}/mo
+              {salary > 0 && (
+                <span className="text-slate-500 ml-1 font-normal">
+                  ({((totalRecurring / salary) * 100).toFixed(1)}% of salary)
+                </span>
+              )}
+            </span>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -332,32 +405,32 @@ function RecurringRow({ a }: { a: RecurringActual }) {
 
   if (!a.found_this_month) {
     statusDot = "bg-gray-600";
-    amountEl = (
-      <span className="text-xs text-gray-500">pending {fmt(a.monthly_cost)}</span>
-    );
+    amountEl = <span className="text-xs text-slate-500">pending {fmt(a.monthly_cost)}</span>;
   } else if (a.is_over) {
     statusDot = "bg-amber-400";
     amountEl = (
       <span className="text-xs text-amber-400 font-medium">
         {fmt(a.actual_amount)}
-        <span className="text-gray-500 ml-1">/ {fmt(a.monthly_cost)}</span>
+        <span className="text-slate-500 ml-1">/ {fmt(a.monthly_cost)}</span>
       </span>
     );
   } else {
     statusDot = "bg-emerald-500";
-    amountEl = (
-      <span className="text-xs text-gray-300">{fmt(a.actual_amount)}</span>
-    );
+    amountEl = <span className="text-xs text-slate-300">{fmt(a.actual_amount)}</span>;
   }
 
   return (
     <div className="flex items-center justify-between gap-2">
       <div className="flex items-center gap-2 min-w-0">
         <span className={`w-2 h-2 rounded-full flex-shrink-0 ${statusDot}`} />
-        <span className="text-sm text-gray-300 truncate">{a.merchant_pattern}</span>
-        {a.frequency === "annual" && (
-          <span className="text-xs text-gray-600">/yr</span>
+        {a.category_color && (
+          <span
+            className="w-2 h-2 rounded-full flex-shrink-0 opacity-60"
+            style={{ backgroundColor: a.category_color }}
+          />
         )}
+        <span className="text-sm text-slate-300 truncate">{a.merchant_pattern}</span>
+        {a.frequency === "annual" && <span className="text-xs text-slate-600">/yr</span>}
       </div>
       {amountEl}
     </div>
@@ -370,12 +443,12 @@ function TrendTable({ trend }: { trend: MonthlySummary[] }) {
   if (trend.length === 0) return null;
 
   return (
-    <div className="bg-gray-900 rounded-xl p-5 border border-gray-800">
-      <h2 className="text-sm font-medium text-gray-300 mb-4">6-month summary</h2>
+    <div className="bg-slate-900 rounded-xl p-5 border border-slate-800">
+      <h2 className="text-sm font-medium text-slate-300 mb-4">12-month summary</h2>
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
-            <tr className="text-xs text-gray-500 uppercase tracking-wide border-b border-gray-800">
+            <tr className="text-xs text-slate-500 uppercase tracking-wide border-b border-slate-800">
               <th className="text-left pb-2">Month</th>
               <th className="text-right pb-2">Salary</th>
               <th className="text-right pb-2">Spent</th>
@@ -390,8 +463,8 @@ function TrendTable({ trend }: { trend: MonthlySummary[] }) {
                   ? Math.round(((m.salary - m.total_out) / m.salary) * 100)
                   : null;
               return (
-                <tr key={`${m.year}-${m.month}`} className="border-b border-gray-800/50 last:border-0">
-                  <td className="py-2.5 text-gray-300">
+                <tr key={`${m.year}-${m.month}`} className="border-b border-slate-800/50 last:border-0">
+                  <td className="py-2.5 text-slate-300">
                     {MONTHS[m.month - 1]} {m.year}
                   </td>
                   <td className="py-2.5 text-right text-green-400">{fmt(m.salary)}</td>
@@ -413,7 +486,7 @@ function TrendTable({ trend }: { trend: MonthlySummary[] }) {
                         {rate}%
                       </span>
                     ) : (
-                      <span className="text-gray-600">—</span>
+                      <span className="text-slate-600">—</span>
                     )}
                   </td>
                 </tr>
@@ -434,6 +507,7 @@ export default function Dashboard() {
   const [month, setMonth] = useState(today.getMonth() + 1);
   const [summary, setSummary] = useState<MonthlySummary | null>(null);
   const [prevSummary, setPrevSummary] = useState<MonthlySummary | null>(null);
+  const [yoySummary, setYoySummary] = useState<MonthlySummary | null>(null);
   const [trend, setTrend] = useState<MonthlySummary[]>([]);
   const [recentTxns, setRecentTxns] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
@@ -444,12 +518,14 @@ export default function Dashboard() {
     Promise.all([
       getMonthlySummary(year, month),
       getMonthlySummary(prev.year, prev.month),
-      getTrend(6),
+      getMonthlySummary(year - 1, month),
+      getTrend(12),
       getRecentTransactions(year, month, 8),
     ])
-      .then(([s, ps, t, rt]) => {
+      .then(([s, ps, yoy, t, rt]) => {
         setSummary(s);
         setPrevSummary(ps);
+        setYoySummary(yoy);
         setTrend(t);
         setRecentTxns(rt.transactions);
       })
@@ -469,6 +545,7 @@ export default function Dashboard() {
   }
 
   const delta = (cur: number, prev: number) => (prevSummary ? cur - prev : null);
+  const yoyDelta = (cur: number, yoy: number) => (yoySummary ? cur - yoy : null);
 
   const savingsRate =
     summary && summary.salary > 0
@@ -480,13 +557,18 @@ export default function Dashboard() {
       ? Math.round(((prevSummary.salary - prevSummary.total_out) / prevSummary.salary) * 100)
       : null;
 
+  const yoySavingsRate =
+    yoySummary && yoySummary.salary > 0
+      ? Math.round(((yoySummary.salary - yoySummary.total_out) / yoySummary.salary) * 100)
+      : null;
+
   return (
     <div className="space-y-5">
       {/* Month navigator */}
       <div className="flex items-center gap-3">
         <button
           onClick={() => navigate(-1)}
-          className="bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-lg px-3 py-1.5 text-sm"
+          className="bg-slate-800 hover:bg-gray-700 border border-slate-700 rounded-lg px-3 py-1.5 text-sm"
         >
           ←
         </button>
@@ -494,7 +576,7 @@ export default function Dashboard() {
           <select
             value={month}
             onChange={(e) => setMonth(Number(e.target.value))}
-            className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm"
+            className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-1.5 text-sm"
           >
             {MONTHS.map((m, i) => (
               <option key={m} value={i + 1}>{m}</option>
@@ -503,7 +585,7 @@ export default function Dashboard() {
           <select
             value={year}
             onChange={(e) => setYear(Number(e.target.value))}
-            className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm"
+            className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-1.5 text-sm"
           >
             {[2023, 2024, 2025, 2026].map((y) => (
               <option key={y} value={y}>{y}</option>
@@ -512,13 +594,13 @@ export default function Dashboard() {
         </div>
         <button
           onClick={() => navigate(1)}
-          className="bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-lg px-3 py-1.5 text-sm"
+          className="bg-slate-800 hover:bg-gray-700 border border-slate-700 rounded-lg px-3 py-1.5 text-sm"
         >
           →
         </button>
       </div>
 
-      {loading && <p className="text-gray-400 py-8 text-center">Loading…</p>}
+      {loading && <Spinner />}
 
       {!loading && summary && (
         <>
@@ -527,24 +609,30 @@ export default function Dashboard() {
             <StatCard
               label="Net salary"
               value={fmt(summary.salary)}
-              color="text-green-400"
+              color="text-emerald-400"
+              accentClass="border-l-4 border-l-emerald-500"
               delta={delta(summary.salary, prevSummary?.salary ?? 0)}
+              yoyDelta={yoyDelta(summary.salary, yoySummary?.salary ?? 0)}
               positiveIsGood={true}
             />
             <StatCard
               label="Total spent"
               value={fmt(summary.total_out)}
               color="text-red-400"
+              accentClass="border-l-4 border-l-red-500"
               sub={`${summary.transaction_count} txns`}
               delta={delta(summary.total_out, prevSummary?.total_out ?? 0)}
+              yoyDelta={yoyDelta(summary.total_out, yoySummary?.total_out ?? 0)}
               positiveIsGood={false}
             />
             <StatCard
               label="Net cash flow"
               value={fmt(summary.net)}
-              color={summary.net >= 0 ? "text-emerald-400" : "text-red-500"}
+              color={summary.net >= 0 ? "text-sky-400" : "text-red-500"}
+              accentClass="border-l-4 border-l-sky-500"
               sub="money in − out"
               delta={delta(summary.net, prevSummary?.net ?? 0)}
+              yoyDelta={yoyDelta(summary.net, yoySummary?.net ?? 0)}
               positiveIsGood={true}
             />
             <StatCard
@@ -552,17 +640,23 @@ export default function Dashboard() {
               value={savingsRate != null ? `${savingsRate}%` : "—"}
               color={
                 savingsRate == null
-                  ? "text-gray-400"
+                  ? "text-slate-400"
                   : savingsRate >= 20
-                  ? "text-emerald-400"
+                  ? "text-violet-400"
                   : savingsRate >= 0
                   ? "text-amber-400"
                   : "text-red-500"
               }
+              accentClass="border-l-4 border-l-violet-500"
               sub="of salary unspent"
               delta={
                 savingsRate != null && prevSavingsRate != null
                   ? savingsRate - prevSavingsRate
+                  : null
+              }
+              yoyDelta={
+                savingsRate != null && yoySavingsRate != null
+                  ? savingsRate - yoySavingsRate
                   : null
               }
               positiveIsGood={true}
@@ -589,12 +683,12 @@ export default function Dashboard() {
           {/* ── Recent transactions + Recurring status ── */}
           <div className="grid md:grid-cols-2 gap-5">
             <RecentTransactions transactions={recentTxns} />
-            <RecurringStatus actuals={summary.recurring_actuals} />
+            <RecurringStatus actuals={summary.recurring_actuals} salary={summary.salary} />
           </div>
         </>
       )}
 
-      {/* ── 6-month summary ── */}
+      {/* ── 12-month summary ── */}
       {!loading && <TrendTable trend={trend} />}
     </div>
   );

@@ -1,7 +1,29 @@
 const BASE = "/api";
+const TTL = 60_000;
+const cache = new Map<string, { data: unknown; ts: number }>();
+
+function cacheGet<T>(key: string): T | null {
+  const entry = cache.get(key);
+  if (!entry || Date.now() - entry.ts > TTL) return null;
+  return entry.data as T;
+}
+
+export function invalidateCache() {
+  cache.clear();
+}
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, {
+  const isGet = !options?.method || options.method.toUpperCase() === "GET";
+  const key = `${BASE}${path}`;
+
+  if (isGet) {
+    const cached = cacheGet<T>(key);
+    if (cached !== null) return cached;
+  } else {
+    cache.clear();
+  }
+
+  const res = await fetch(key, {
     headers: { "Content-Type": "application/json", ...options?.headers },
     ...options,
   });
@@ -16,7 +38,9 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
       throw new Error(`HTTP ${res.status}: ${text.slice(0, 120)}`);
     }
   }
-  return JSON.parse(text) as T;
+  const data = JSON.parse(text) as T;
+  if (isGet) cache.set(key, { data, ts: Date.now() });
+  return data;
 }
 
 // Transactions
@@ -79,6 +103,7 @@ export const bulkUploadPayslips = (files: File[]) => {
           return Promise.reject(new Error(`HTTP ${r.status}: ${text.slice(0, 120)}`));
         }
       }
+      cache.clear();
       return JSON.parse(text) as {
         results: { filename: string; status: string; detail?: string; date?: string; net?: number }[];
         imported: number;
@@ -103,6 +128,7 @@ export const uploadPayslip = (file: File) => {
           return Promise.reject(new Error(`HTTP ${r.status}: ${text.slice(0, 120)}`));
         }
       }
+      cache.clear();
       return JSON.parse(text) as import("../types").Salary;
     }
   );
@@ -233,6 +259,24 @@ export const detectAccount = (file: File) => {
   });
 };
 
+// Email imports
+export const getEmailImports = (status?: string) =>
+  request<import("../types").EmailImport[]>(
+    `/email-imports/${status ? `?status=${status}` : ""}`
+  );
+
+export const pollEmails = () =>
+  request<{ new_imports: number; message: string }>("/email-imports/poll", { method: "POST" });
+
+export const confirmEmailImport = (id: number) =>
+  request<import("../types").EmailImport>(`/email-imports/${id}/confirm`, { method: "POST" });
+
+export const skipEmailImport = (id: number) =>
+  request<import("../types").EmailImport>(`/email-imports/${id}/skip`, { method: "POST" });
+
+export const deleteEmailImport = (id: number) =>
+  request<void>(`/email-imports/${id}`, { method: "DELETE" });
+
 export const bulkUpload = (
   files: File[],
   formatId: number,
@@ -256,6 +300,7 @@ export const bulkUpload = (
         return Promise.reject(new Error(`Server error (${r.status}): ${text.slice(0, 120)}`));
       }
     }
+    cache.clear();
     return JSON.parse(text) as import("../types").BulkUploadResult;
   });
 };
