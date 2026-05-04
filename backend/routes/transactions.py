@@ -24,6 +24,8 @@ def list_transactions(
     month: int | None = None,
     year: int | None = None,
     search: str = "",
+    amount_type: str = "",
+    hide_transfers: bool = False,
     db: Session = Depends(get_db),
 ):
     q = db.query(Transaction).order_by(Transaction.date.desc())
@@ -31,13 +33,22 @@ def list_transactions(
     if account_id is not None:
         q = q.filter(Transaction.account_id == account_id)
     if category_id is not None:
-        q = q.filter(Transaction.category_id == category_id)
+        if category_id == -1:
+            q = q.filter(Transaction.category_id == None)
+        else:
+            q = q.filter(Transaction.category_id == category_id)
     if year is not None:
         q = q.filter(extract("year", Transaction.date) == year)
     if month is not None:
         q = q.filter(extract("month", Transaction.date) == month)
     if search.strip():
         q = q.filter(Transaction.description.ilike(f"%{search.strip()}%"))
+    if amount_type == "in":
+        q = q.filter(Transaction.amount > 0)
+    elif amount_type == "out":
+        q = q.filter(Transaction.amount < 0)
+    if hide_transfers:
+        q = q.filter(Transaction.is_transfer == False)
 
     total = q.count()
     pages = max(1, (total + per_page - 1) // per_page)

@@ -62,6 +62,9 @@ class TransactionOut(BaseModel):
     category_id: Optional[int] = None
     category: Optional[CategoryOut] = None
     is_recurring: bool
+    is_transfer: bool = False
+    transfer_counterpart_id: Optional[int] = None
+    transfer_ignored: bool = False
     source_file: Optional[str] = None
     created_at: datetime
 
@@ -92,6 +95,18 @@ class TransactionPage(BaseModel):
 
 # ── Salary ────────────────────────────────────────────────────────────────────
 
+class PayslipLineItemOut(BaseModel):
+    id: int
+    description: str
+    rate: Optional[float] = None
+    units: Optional[str] = None
+    amount: float
+    this_year_amount: Optional[float] = None
+    line_type: str  # "earning" | "deduction"
+
+    model_config = {"from_attributes": True}
+
+
 class SalaryOut(BaseModel):
     id: int
     date: date
@@ -99,7 +114,10 @@ class SalaryOut(BaseModel):
     net_amount: float
     employer: Optional[str] = None
     notes: Optional[str] = None
+    ni_number: Optional[str] = None
+    source_file: Optional[str] = None
     created_at: datetime
+    line_items: list[PayslipLineItemOut] = []
 
     model_config = {"from_attributes": True}
 
@@ -216,3 +234,38 @@ class ConfirmUploadRequest(BaseModel):
     save_format: bool = False
     format_name: Optional[str] = None
     format_id: Optional[int] = None  # reference existing format to bump use_count
+
+
+class BulkFileResult(BaseModel):
+    filename: str
+    added: int = 0
+    skipped: int = 0
+    error: Optional[str] = None
+    note: Optional[str] = None  # e.g. "Used auto-detected mapping"
+
+
+class BulkUploadResult(BaseModel):
+    results: list[BulkFileResult]
+    total_added: int
+    total_skipped: int
+    total_errors: int
+
+
+# ── Person identities (NI number → display name) ─────────────────────────────
+
+class PersonIdentityOut(BaseModel):
+    id: int
+    ni_number: str
+    display_name: str
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class PersonIdentityCreate(BaseModel):
+    ni_number: str
+    display_name: str
+
+
+class PersonIdentityUpdate(BaseModel):
+    display_name: str

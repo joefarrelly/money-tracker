@@ -24,8 +24,33 @@ export interface Transaction {
   category_id: number | null;
   category: Category | null;
   is_recurring: boolean;
+  is_transfer: boolean;
+  transfer_counterpart_id: number | null;
+  transfer_ignored: boolean;
   source_file: string | null;
   created_at: string;
+}
+
+export interface TransferTxn {
+  id: number;
+  date: string;
+  description: string;
+  amount: number;
+  account_id: number;
+  account_name: string;
+}
+
+export interface TransferCandidate {
+  txn_out: TransferTxn;
+  txn_in: TransferTxn;
+  day_diff: number;
+  confidence: number;
+}
+
+export interface ConfirmedTransfer {
+  primary_id: number;
+  txn_out: TransferTxn | null;
+  txn_in: TransferTxn | null;
 }
 
 export interface RecurringExpense {
@@ -42,6 +67,16 @@ export interface RecurringExpense {
   created_at: string;
 }
 
+export interface PayslipLineItem {
+  id: number;
+  description: string;
+  rate: number | null;
+  units: string | null;
+  amount: number;
+  this_year_amount: number | null;
+  line_type: "earning" | "deduction";
+}
+
 export interface Salary {
   id: number;
   date: string;
@@ -49,6 +84,16 @@ export interface Salary {
   net_amount: number;
   employer: string | null;
   notes: string | null;
+  ni_number: string | null;
+  source_file: string | null;
+  created_at: string;
+  line_items: PayslipLineItem[];
+}
+
+export interface PersonIdentity {
+  id: number;
+  ni_number: string;
+  display_name: string;
   created_at: string;
 }
 
@@ -57,6 +102,20 @@ export interface CategoryBreakdown {
   amount: number;
   color: string;
   count: number;
+}
+
+export interface RecurringActual {
+  id: number;
+  merchant_pattern: string;
+  typical_amount: number;
+  monthly_cost: number;
+  frequency: "monthly" | "annual";
+  actual_amount: number;
+  found_this_month: boolean;
+  is_over: boolean;
+  category_id: number | null;
+  category_name: string | null;
+  category_color: string | null;
 }
 
 export interface MonthlySummary {
@@ -70,6 +129,7 @@ export interface MonthlySummary {
   disposable_income: number;
   category_breakdown: CategoryBreakdown[];
   transaction_count: number;
+  recurring_actuals: RecurringActual[];
   salary_entries: Salary[];
 }
 
@@ -97,6 +157,36 @@ export interface StatementFormat {
   year_source: "inline" | "detect" | "manual";
   is_builtin: boolean;
   use_count: number;
+}
+
+export interface BulkFileResult {
+  filename: string;
+  added: number;
+  skipped: number;
+  error: string | null;
+  note: string | null;
+}
+
+export interface BulkUploadResult {
+  results: BulkFileResult[];
+  total_added: number;
+  total_skipped: number;
+  total_errors: number;
+}
+
+export interface EmailImport {
+  id: number;
+  message_id: string;
+  subject: string | null;
+  sender: string | null;
+  received_at: string | null;
+  filename: string | null;
+  import_type: "payslip" | "bank_statement" | null;
+  status: "pending" | "imported" | "skipped" | "failed";
+  error_message: string | null;
+  raw_data: Record<string, unknown> | null;
+  created_at: string;
+  imported_at: string | null;
 }
 
 export type ColumnRole =

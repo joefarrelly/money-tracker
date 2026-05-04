@@ -40,6 +40,9 @@ class Transaction(Base):
     balance = Column(Float)
     category_id = Column(Integer, ForeignKey("categories.id"), nullable=True)
     is_recurring = Column(Boolean, default=False)
+    is_transfer = Column(Boolean, default=False)
+    transfer_counterpart_id = Column(Integer, ForeignKey("transactions.id"), nullable=True)
+    transfer_ignored = Column(Boolean, default=False)
     source_file = Column(String(255))
     created_at = Column(DateTime, default=datetime.utcnow)
 
@@ -69,6 +72,15 @@ class RecurringExpense(Base):
         return self.typical_amount
 
 
+class PersonIdentity(Base):
+    __tablename__ = "person_identities"
+
+    id = Column(Integer, primary_key=True)
+    ni_number = Column(String(20), unique=True, nullable=False)
+    display_name = Column(String(100), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
 class Salary(Base):
     __tablename__ = "salaries"
 
@@ -78,7 +90,46 @@ class Salary(Base):
     net_amount = Column(Float, nullable=False)
     employer = Column(String(255))
     notes = Column(Text)
+    ni_number = Column(String(20), nullable=True)
+    source_file = Column(String(255))
     created_at = Column(DateTime, default=datetime.utcnow)
+
+    line_items = relationship(
+        "PayslipLineItem", back_populates="salary", cascade="all, delete-orphan"
+    )
+
+
+class PayslipLineItem(Base):
+    __tablename__ = "payslip_line_items"
+
+    id = Column(Integer, primary_key=True)
+    salary_id = Column(Integer, ForeignKey("salaries.id", ondelete="CASCADE"), nullable=False)
+    description = Column(String(255), nullable=False)
+    rate = Column(Float, nullable=True)
+    units = Column(String(100), nullable=True)
+    amount = Column(Float, nullable=False)
+    this_year_amount = Column(Float, nullable=True)
+    line_type = Column(String(20), nullable=False)  # "earning" | "deduction"
+
+    salary = relationship("Salary", back_populates="line_items")
+
+
+class EmailImport(Base):
+    __tablename__ = "email_imports"
+
+    id = Column(Integer, primary_key=True)
+    message_id = Column(String(500), unique=True, nullable=False)
+    subject = Column(String(500))
+    sender = Column(String(255))
+    received_at = Column(DateTime)
+    filename = Column(String(255))
+    import_type = Column(String(20))   # "payslip" | "bank_statement"
+    status = Column(String(20), default="pending")  # "pending" | "imported" | "skipped" | "failed"
+    error_message = Column(Text)
+    file_path = Column(String(500))
+    raw_data = Column(JSON)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    imported_at = Column(DateTime)
 
 
 class StatementFormat(Base):

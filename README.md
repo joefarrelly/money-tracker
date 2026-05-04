@@ -15,7 +15,7 @@ I was managing my personal finances across three separate tools — a Google She
 
 ## Stack
 
-- **Backend:** Python / Flask / SQLAlchemy / SQLite
+- **Backend:** Python / FastAPI / SQLAlchemy / SQLite
 - **Frontend:** React / TypeScript / Vite / Tailwind CSS
 
 ## Setup
@@ -31,7 +31,7 @@ pip install -r requirements.txt
 python app.py
 ```
 
-Runs at `http://localhost:5000`.
+Runs at `http://localhost:8000`. Interactive API docs at `http://localhost:8000/docs`.
 
 ### Frontend
 

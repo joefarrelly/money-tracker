@@ -1,16 +1,20 @@
 import { useEffect, useState } from "react";
 import { getRecurring, syncRecurring, patchRecurring, getCategories } from "../api/client";
 import type { RecurringExpense, Category } from "../types";
+import { Spinner } from "../components/Spinner";
 
 export default function Recurring() {
   const [items, setItems] = useState<RecurringExpense[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [syncing, setSyncing] = useState(false);
   const [syncResult, setSyncResult] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    getRecurring().then(setItems);
-    getCategories().then(setCategories);
+    Promise.all([getRecurring(), getCategories()]).then(([r, c]) => {
+      setItems(r);
+      setCategories(c);
+    }).finally(() => setLoading(false));
   }, []);
 
   const handleSync = async () => {
@@ -42,12 +46,14 @@ export default function Recurring() {
 
   const monthlyTotal = items.reduce((sum, r) => sum + r.monthly_cost, 0);
 
+  if (loading) return <Spinner />;
+
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-lg font-semibold">Recurring expenses</h1>
-          <p className="text-sm text-gray-400 mt-0.5">
+          <p className="text-sm text-slate-400 mt-0.5">
             Monthly total: <span className="text-red-400 font-medium">£{monthlyTotal.toFixed(2)}</span>
           </p>
         </div>
@@ -59,14 +65,14 @@ export default function Recurring() {
           >
             {syncing ? "Detecting…" : "Auto-detect recurring"}
           </button>
-          {syncResult && <p className="text-xs text-gray-400">{syncResult}</p>}
+          {syncResult && <p className="text-xs text-slate-400">{syncResult}</p>}
         </div>
       </div>
 
-      <div className="bg-gray-900 rounded-xl border border-gray-800 overflow-hidden">
+      <div className="bg-slate-900 rounded-xl border border-slate-800 overflow-hidden">
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b border-gray-800 text-left text-gray-400">
+            <tr className="border-b border-slate-800 text-left text-slate-400">
               <th className="px-4 py-3">Merchant</th>
               <th className="px-4 py-3">Amount</th>
               <th className="px-4 py-3">Frequency</th>
@@ -78,10 +84,10 @@ export default function Recurring() {
           </thead>
           <tbody>
             {items.map((r) => (
-              <tr key={r.id} className="border-b border-gray-800/50 hover:bg-gray-800/40">
+              <tr key={r.id} className="border-b border-slate-800/50 hover:bg-slate-800/40">
                 <td className="px-4 py-3 font-mono text-xs">{r.merchant_pattern}</td>
                 <td className="px-4 py-3 text-red-400">£{r.typical_amount.toFixed(2)}</td>
-                <td className="px-4 py-3 capitalize text-gray-400">{r.frequency}</td>
+                <td className="px-4 py-3 capitalize text-slate-400">{r.frequency}</td>
                 <td className="px-4 py-3 text-red-400">£{r.monthly_cost.toFixed(2)}</td>
                 <td className="px-4 py-3">
                   <select
@@ -89,7 +95,7 @@ export default function Recurring() {
                     onChange={(e) =>
                       updateCategory(r.id, e.target.value ? Number(e.target.value) : null)
                     }
-                    className="bg-gray-800 border border-gray-700 rounded px-2 py-1 text-xs"
+                    className="bg-slate-800 border border-slate-700 rounded px-2 py-1 text-xs"
                   >
                     <option value="">—</option>
                     {categories.map((c) => (
@@ -120,7 +126,7 @@ export default function Recurring() {
                     )}
                     <button
                       onClick={() => deactivate(r.id)}
-                      className="text-xs text-gray-500 hover:text-red-400 hover:underline"
+                      className="text-xs text-slate-500 hover:text-red-400 hover:underline"
                     >
                       Remove
                     </button>
@@ -131,7 +137,7 @@ export default function Recurring() {
           </tbody>
         </table>
         {items.length === 0 && (
-          <p className="px-4 py-6 text-gray-500 text-sm text-center">
+          <p className="px-4 py-6 text-slate-500 text-sm text-center">
             No recurring expenses yet. Upload statements then click "Auto-detect".
           </p>
         )}
