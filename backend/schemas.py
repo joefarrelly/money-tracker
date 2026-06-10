@@ -1,10 +1,11 @@
 from datetime import date, datetime
 from typing import Literal, Optional
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, model_validator
 
 
 # ── Account ──────────────────────────────────────────────────────────────────
+
 
 class AccountOut(BaseModel):
     id: int
@@ -28,6 +29,7 @@ class AccountUpdate(BaseModel):
 
 # ── Category ─────────────────────────────────────────────────────────────────
 
+
 class CategoryOut(BaseModel):
     id: int
     name: str
@@ -50,6 +52,7 @@ class CategoryUpdate(BaseModel):
 
 
 # ── Transaction ───────────────────────────────────────────────────────────────
+
 
 class TransactionOut(BaseModel):
     id: int
@@ -94,6 +97,7 @@ class TransactionPage(BaseModel):
 
 
 # ── Salary ────────────────────────────────────────────────────────────────────
+
 
 class PayslipLineItemOut(BaseModel):
     id: int
@@ -140,6 +144,7 @@ class SalaryUpdate(BaseModel):
 
 # ── Recurring expense ─────────────────────────────────────────────────────────
 
+
 class RecurringExpenseOut(BaseModel):
     id: int
     merchant_pattern: str
@@ -165,6 +170,7 @@ class RecurringExpenseUpdate(BaseModel):
 
 # ── Upload ────────────────────────────────────────────────────────────────────
 
+
 class UploadResult(BaseModel):
     added: int
     skipped: int
@@ -177,6 +183,7 @@ class DetectBankResult(BaseModel):
 
 
 # ── Statement formats ─────────────────────────────────────────────────────────
+
 
 class StatementFormatOut(BaseModel):
     id: int
@@ -230,7 +237,9 @@ class ConfirmUploadRequest(BaseModel):
     mapping: ColumnMapping
     column_headers: list[str] = []  # raw headers from preview, needed if saving format
     year: Optional[int] = None
-    skip_patterns: list[str] = []   # description substrings to exclude (e.g. "Opening balance")
+    skip_patterns: list[
+        str
+    ] = []  # description substrings to exclude (e.g. "Opening balance")
     save_format: bool = False
     format_name: Optional[str] = None
     format_id: Optional[int] = None  # reference existing format to bump use_count
@@ -252,6 +261,7 @@ class BulkUploadResult(BaseModel):
 
 
 # ── Person identities (NI number → display name) ─────────────────────────────
+
 
 class PersonIdentityOut(BaseModel):
     id: int

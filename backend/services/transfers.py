@@ -49,14 +49,21 @@ def detect_transfers(db: Session) -> list[dict]:
 
             # Confidence: 1.0 for same-day exact match, lower for day gaps or rounding
             amount_delta = abs(abs(neg.amount) - abs(pos.amount))
-            confidence = round(1.0 - (day_diff * 0.15) - (amount_delta / max(abs(neg.amount), 0.01) * 0.1), 3)
+            confidence = round(
+                1.0
+                - (day_diff * 0.15)
+                - (amount_delta / max(abs(neg.amount), 0.01) * 0.1),
+                3,
+            )
 
-            candidates.append({
-                "txn_out": _serialise(neg),
-                "txn_in": _serialise(pos),
-                "day_diff": day_diff,
-                "confidence": confidence,
-            })
+            candidates.append(
+                {
+                    "txn_out": _serialise(neg),
+                    "txn_in": _serialise(pos),
+                    "day_diff": day_diff,
+                    "confidence": confidence,
+                }
+            )
 
     candidates.sort(key=lambda c: -c["confidence"])
     return candidates
@@ -70,5 +77,7 @@ def _serialise(t: Transaction) -> dict:
         "description": t.description,
         "amount": t.amount,
         "account_id": t.account_id,
-        "account_name": (account.nickname or account.account_number) if account else str(t.account_id),
+        "account_name": (account.nickname or account.account_number)
+        if account
+        else str(t.account_id),
     }

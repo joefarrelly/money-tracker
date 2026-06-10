@@ -1,5 +1,16 @@
-from datetime import datetime, date as date_type
-from sqlalchemy import Boolean, Column, Date, DateTime, Float, ForeignKey, Integer, JSON, String, Text
+from datetime import datetime
+from sqlalchemy import (
+    Boolean,
+    Column,
+    Date,
+    DateTime,
+    Float,
+    ForeignKey,
+    Integer,
+    JSON,
+    String,
+    Text,
+)
 from sqlalchemy.orm import relationship
 
 from database import Base
@@ -25,8 +36,12 @@ class Category(Base):
     color = Column(String(7), default="#6b7280")
     icon = Column(String(50))
 
-    transactions = relationship("Transaction", back_populates="category", lazy="dynamic")
-    recurring_expenses = relationship("RecurringExpense", back_populates="category", lazy="dynamic")
+    transactions = relationship(
+        "Transaction", back_populates="category", lazy="dynamic"
+    )
+    recurring_expenses = relationship(
+        "RecurringExpense", back_populates="category", lazy="dynamic"
+    )
 
 
 class Transaction(Base):
@@ -41,7 +56,9 @@ class Transaction(Base):
     category_id = Column(Integer, ForeignKey("categories.id"), nullable=True)
     is_recurring = Column(Boolean, default=False)
     is_transfer = Column(Boolean, default=False)
-    transfer_counterpart_id = Column(Integer, ForeignKey("transactions.id"), nullable=True)
+    transfer_counterpart_id = Column(
+        Integer, ForeignKey("transactions.id"), nullable=True
+    )
     transfer_ignored = Column(Boolean, default=False)
     source_file = Column(String(255))
     created_at = Column(DateTime, default=datetime.utcnow)
@@ -103,7 +120,9 @@ class PayslipLineItem(Base):
     __tablename__ = "payslip_line_items"
 
     id = Column(Integer, primary_key=True)
-    salary_id = Column(Integer, ForeignKey("salaries.id", ondelete="CASCADE"), nullable=False)
+    salary_id = Column(
+        Integer, ForeignKey("salaries.id", ondelete="CASCADE"), nullable=False
+    )
     description = Column(String(255), nullable=False)
     rate = Column(Float, nullable=True)
     units = Column(String(100), nullable=True)
@@ -123,8 +142,10 @@ class EmailImport(Base):
     sender = Column(String(255))
     received_at = Column(DateTime)
     filename = Column(String(255))
-    import_type = Column(String(20))   # "payslip" | "bank_statement"
-    status = Column(String(20), default="pending")  # "pending" | "imported" | "skipped" | "failed"
+    import_type = Column(String(20))  # "payslip" | "bank_statement"
+    status = Column(
+        String(20), default="pending"
+    )  # "pending" | "imported" | "skipped" | "failed"
     error_message = Column(Text)
     file_path = Column(String(500))
     raw_data = Column(JSON)
@@ -137,6 +158,7 @@ class StatementFormat(Base):
     Saved column mapping for a bank statement format.
     Built-in entries seed Barclays and Chase; users can save their own.
     """
+
     __tablename__ = "statement_formats"
 
     id = Column(Integer, primary_key=True)
@@ -153,14 +175,18 @@ class StatementFormat(Base):
     # "split" = separate money_in / money_out columns (e.g. Barclays)
     # "signed" = single amount column with +/- prefix (e.g. Chase)
     amount_style = Column(String(10), nullable=False)
-    amount_col = Column(Integer, nullable=True)           # for "signed"
-    money_in_col = Column(Integer, nullable=True)         # for "split"
-    money_out_col = Column(Integer, nullable=True)        # for "split"
-    date_description_col = Column(Integer, nullable=True) # merged date+description column
+    amount_col = Column(Integer, nullable=True)  # for "signed"
+    money_in_col = Column(Integer, nullable=True)  # for "split"
+    money_out_col = Column(Integer, nullable=True)  # for "split"
+    date_description_col = Column(
+        Integer, nullable=True
+    )  # merged date+description column
 
     # Date parsing
-    date_format = Column(String(30), nullable=False)          # e.g. "%d %b" or "%d %b %Y"
-    year_source = Column(String(20), nullable=False, default="inline")  # "inline"|"detect"|"manual"
+    date_format = Column(String(30), nullable=False)  # e.g. "%d %b" or "%d %b %Y"
+    year_source = Column(
+        String(20), nullable=False, default="inline"
+    )  # "inline"|"detect"|"manual"
 
     is_builtin = Column(Boolean, default=False)
     use_count = Column(Integer, default=0)

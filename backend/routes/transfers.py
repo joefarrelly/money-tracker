@@ -20,12 +20,14 @@ class TransferIgnoreRequest(BaseModel):
 
 # ── Candidates ────────────────────────────────────────────────────────────────
 
+
 @router.get("/candidates")
 def get_candidates(db: Session = Depends(get_db)):
     return detect_transfers(db)
 
 
 # ── Confirm a pair ────────────────────────────────────────────────────────────
+
 
 @router.post("/confirm")
 def confirm_transfer(body: TransferConfirmRequest, db: Session = Depends(get_db)):
@@ -35,7 +37,9 @@ def confirm_transfer(body: TransferConfirmRequest, db: Session = Depends(get_db)
     if not txn_out or not txn_in:
         raise HTTPException(status_code=404, detail="Transaction not found")
     if txn_out.account_id == txn_in.account_id:
-        raise HTTPException(status_code=400, detail="Both transactions are on the same account")
+        raise HTTPException(
+            status_code=400, detail="Both transactions are on the same account"
+        )
 
     txn_out.is_transfer = True
     txn_out.transfer_counterpart_id = txn_in.id
@@ -51,6 +55,7 @@ def confirm_transfer(body: TransferConfirmRequest, db: Session = Depends(get_db)
 
 # ── Ignore (deny candidate) ───────────────────────────────────────────────────
 
+
 @router.post("/ignore")
 def ignore_transfer(body: TransferIgnoreRequest, db: Session = Depends(get_db)):
     txn = db.get(Transaction, body.txn_id)
@@ -62,6 +67,7 @@ def ignore_transfer(body: TransferIgnoreRequest, db: Session = Depends(get_db)):
 
 
 # ── Unlink a confirmed transfer ───────────────────────────────────────────────
+
 
 @router.post("/unlink/{txn_id}")
 def unlink_transfer(txn_id: int, db: Session = Depends(get_db)):
@@ -83,6 +89,7 @@ def unlink_transfer(txn_id: int, db: Session = Depends(get_db)):
 
 
 # ── List confirmed transfers ──────────────────────────────────────────────────
+
 
 @router.get("/confirmed")
 def get_confirmed(db: Session = Depends(get_db)):
@@ -115,11 +122,13 @@ def get_confirmed(db: Session = Depends(get_db)):
         txn_out = t if t.amount <= 0 else counterpart
         txn_in = counterpart if t.amount <= 0 else t
 
-        results.append({
-            "txn_out": _ser(txn_out) if txn_out else None,
-            "txn_in": _ser(txn_in) if txn_in else None,
-            "primary_id": t.id,
-        })
+        results.append(
+            {
+                "txn_out": _ser(txn_out) if txn_out else None,
+                "txn_in": _ser(txn_in) if txn_in else None,
+                "primary_id": t.id,
+            }
+        )
 
     return results
 
@@ -132,5 +141,7 @@ def _ser(t: Transaction) -> dict:
         "description": t.description,
         "amount": t.amount,
         "account_id": t.account_id,
-        "account_name": (account.nickname or account.account_number) if account else str(t.account_id),
+        "account_name": (account.nickname or account.account_number)
+        if account
+        else str(t.account_id),
     }

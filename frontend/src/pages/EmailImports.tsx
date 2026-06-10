@@ -10,7 +10,11 @@ import {
 import type { EmailImport } from "../types";
 
 const fmt = (v: number) =>
-  "£" + v.toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  "£" +
+  v.toLocaleString("en-GB", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
 
 function statusBadge(status: EmailImport["status"]) {
   const map: Record<string, string> = {
@@ -20,7 +24,9 @@ function statusBadge(status: EmailImport["status"]) {
     failed: "bg-red-900/40 text-red-300",
   };
   return (
-    <span className={`text-xs px-2 py-0.5 rounded-full ${map[status] ?? map.skipped}`}>
+    <span
+      className={`text-xs px-2 py-0.5 rounded-full ${map[status] ?? map.skipped}`}
+    >
       {status}
     </span>
   );
@@ -51,18 +57,27 @@ function PayslipDetail({ d }: { d: Record<string, unknown> }) {
   }) => (
     <>
       <tr className="bg-slate-800/60">
-        <td colSpan={3} className={`px-3 py-1 text-xs font-semibold uppercase tracking-wider ${colorClass}`}>
+        <td
+          colSpan={3}
+          className={`px-3 py-1 text-xs font-semibold uppercase tracking-wider ${colorClass}`}
+        >
           {title}
         </td>
       </tr>
       {rows.map((item, i) => (
         <tr key={i} className="border-t border-slate-800/30">
-          <td className="px-3 py-1.5 text-sm text-slate-300 pl-5">{item.description}</td>
+          <td className="px-3 py-1.5 text-sm text-slate-300 pl-5">
+            {item.description}
+          </td>
           <td className="px-3 py-1.5 text-xs text-slate-500 text-right">
             {item.rate != null ? fmt(item.rate) : ""}
-            {item.units ? <span className="ml-1 text-slate-600">× {item.units}</span> : null}
+            {item.units ? (
+              <span className="ml-1 text-slate-600">× {item.units}</span>
+            ) : null}
           </td>
-          <td className={`px-3 py-1.5 text-sm text-right font-medium ${colorClass}`}>
+          <td
+            className={`px-3 py-1.5 text-sm text-right font-medium ${colorClass}`}
+          >
             {fmt(item.amount)}
           </td>
         </tr>
@@ -74,14 +89,22 @@ function PayslipDetail({ d }: { d: Record<string, unknown> }) {
     <div>
       <div className="flex gap-6 mb-3 text-sm">
         <span>
-          Net pay <span className="text-emerald-400 font-semibold">{fmt(d.net_pay as number)}</span>
+          Net pay{" "}
+          <span className="text-emerald-400 font-semibold">
+            {fmt(d.net_pay as number)}
+          </span>
         </span>
         {d.gross_pay != null && (
           <span>
-            Gross <span className="text-slate-300 font-medium">{fmt(d.gross_pay as number)}</span>
+            Gross{" "}
+            <span className="text-slate-300 font-medium">
+              {fmt(d.gross_pay as number)}
+            </span>
           </span>
         )}
-        {d.employer != null && <span className="text-slate-400">{String(d.employer)}</span>}
+        {d.employer != null && (
+          <span className="text-slate-400">{String(d.employer)}</span>
+        )}
       </div>
       {items.length > 0 && (
         <div className="rounded-lg overflow-hidden border border-slate-800">
@@ -95,10 +118,18 @@ function PayslipDetail({ d }: { d: Record<string, unknown> }) {
             </thead>
             <tbody>
               {earnings.length > 0 && (
-                <Section title="Earnings" rows={earnings} colorClass="text-green-400" />
+                <Section
+                  title="Earnings"
+                  rows={earnings}
+                  colorClass="text-green-400"
+                />
               )}
               {deductions.length > 0 && (
-                <Section title="Deductions" rows={deductions} colorClass="text-red-400" />
+                <Section
+                  title="Deductions"
+                  rows={deductions}
+                  colorClass="text-red-400"
+                />
               )}
             </tbody>
           </table>
@@ -118,9 +149,13 @@ function BankDetail({ d }: { d: Record<string, unknown> }) {
     <div>
       <div className="flex gap-6 mb-3 text-sm">
         <span>
-          <span className="text-sky-400 font-semibold">{total} transactions</span>
+          <span className="text-sky-400 font-semibold">
+            {total} transactions
+          </span>
         </span>
-        {d.format_name != null && <span className="text-slate-400">{String(d.format_name)}</span>}
+        {d.format_name != null && (
+          <span className="text-slate-400">{String(d.format_name)}</span>
+        )}
         {d.account_number != null && d.account_number !== "unknown" && (
           <span className="text-slate-400">
             Account ending {String(d.account_number).slice(-4)}
@@ -200,7 +235,9 @@ function ImportCard({
   return (
     <div
       className={`bg-slate-900 border rounded-xl overflow-hidden transition-colors ${
-        expanded ? "border-indigo-600/40" : "border-slate-800 hover:border-slate-700"
+        expanded
+          ? "border-indigo-600/40"
+          : "border-slate-800 hover:border-slate-700"
       }`}
     >
       {/* Header row — always visible */}
@@ -266,7 +303,12 @@ function ImportCard({
             viewBox="0 0 24 24"
             stroke="currentColor"
           >
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M19 9l-7 7-7-7"
+            />
           </svg>
         </div>
       </div>
@@ -285,7 +327,8 @@ function ImportCard({
 
           {record.imported_at && (
             <p className="text-xs text-slate-500">
-              Imported {new Date(record.imported_at).toLocaleDateString("en-GB")}
+              Imported{" "}
+              {new Date(record.imported_at).toLocaleDateString("en-GB")}
             </p>
           )}
 
@@ -335,7 +378,9 @@ export default function EmailImports() {
   const [expandedId, setExpandedId] = useState<number | null>(null);
 
   const load = () =>
-    getEmailImports().then(setImports).catch((e) => setError(e.message));
+    getEmailImports()
+      .then(setImports)
+      .catch((e) => setError(e.message));
 
   useEffect(() => {
     setLoading(true);
@@ -381,8 +426,8 @@ export default function EmailImports() {
           <h1 className="text-lg font-semibold">Email Imports</h1>
           <p className="text-sm text-slate-400 mt-0.5">
             Send PDFs to{" "}
-            <span className="text-slate-300">joefarrelly96@gmail.com</span> with "payslip" or
-            "bank" in the subject — they'll appear here for review.
+            <span className="text-slate-300">joefarrelly96@gmail.com</span> with
+            "payslip" or "bank" in the subject — they'll appear here for review.
           </p>
         </div>
         <button
@@ -420,8 +465,8 @@ export default function EmailImports() {
             </h2>
             {pending.length === 0 ? (
               <div className="bg-slate-900 border border-slate-800 rounded-xl px-4 py-8 text-center text-sm text-slate-500">
-                No pending imports. Send a PDF to your inbox with "payslip" or "bank" in the
-                subject and click "Check now".
+                No pending imports. Send a PDF to your inbox with "payslip" or
+                "bank" in the subject and click "Check now".
               </div>
             ) : (
               <div className="space-y-2">
@@ -430,11 +475,17 @@ export default function EmailImports() {
                     key={r.id}
                     record={r}
                     expanded={expandedId === r.id}
-                    onToggle={() => setExpandedId(expandedId === r.id ? null : r.id)}
+                    onToggle={() =>
+                      setExpandedId(expandedId === r.id ? null : r.id)
+                    }
                     busy={busyId === r.id}
-                    onConfirm={() => withBusy(r.id, () => confirmEmailImport(r.id))}
+                    onConfirm={() =>
+                      withBusy(r.id, () => confirmEmailImport(r.id))
+                    }
                     onSkip={() => withBusy(r.id, () => skipEmailImport(r.id))}
-                    onDismiss={() => withBusy(r.id, () => deleteEmailImport(r.id))}
+                    onDismiss={() =>
+                      withBusy(r.id, () => deleteEmailImport(r.id))
+                    }
                   />
                 ))}
               </div>
@@ -445,7 +496,9 @@ export default function EmailImports() {
             <section>
               <h2 className="text-sm font-medium text-slate-300 mb-3">
                 History
-                <span className="ml-2 text-xs text-slate-500">({history.length})</span>
+                <span className="ml-2 text-xs text-slate-500">
+                  ({history.length})
+                </span>
               </h2>
               <div className="space-y-2">
                 {history.map((r) => (
@@ -453,11 +506,17 @@ export default function EmailImports() {
                     key={r.id}
                     record={r}
                     expanded={expandedId === r.id}
-                    onToggle={() => setExpandedId(expandedId === r.id ? null : r.id)}
+                    onToggle={() =>
+                      setExpandedId(expandedId === r.id ? null : r.id)
+                    }
                     busy={busyId === r.id}
-                    onConfirm={() => withBusy(r.id, () => confirmEmailImport(r.id))}
+                    onConfirm={() =>
+                      withBusy(r.id, () => confirmEmailImport(r.id))
+                    }
                     onSkip={() => withBusy(r.id, () => skipEmailImport(r.id))}
-                    onDismiss={() => withBusy(r.id, () => deleteEmailImport(r.id))}
+                    onDismiss={() =>
+                      withBusy(r.id, () => deleteEmailImport(r.id))
+                    }
                   />
                 ))}
               </div>

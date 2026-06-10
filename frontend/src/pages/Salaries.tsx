@@ -1,5 +1,11 @@
 import { useEffect, useRef, useState } from "react";
-import { getSalaries, deleteSalary, uploadPayslip, bulkUploadPayslips, getIdentities } from "../api/client";
+import {
+  getSalaries,
+  deleteSalary,
+  uploadPayslip,
+  bulkUploadPayslips,
+  getIdentities,
+} from "../api/client";
 import type { Salary, PayslipLineItem, PersonIdentity } from "../types";
 import { Spinner } from "../components/Spinner";
 
@@ -22,18 +28,27 @@ function LineItemsTable({ items }: { items: PayslipLineItem[] }) {
   }) => (
     <>
       <tr className="bg-slate-800/60">
-        <td colSpan={4} className={`px-4 py-1 text-xs font-semibold uppercase tracking-wider ${colorClass}`}>
+        <td
+          colSpan={4}
+          className={`px-4 py-1 text-xs font-semibold uppercase tracking-wider ${colorClass}`}
+        >
           {title}
         </td>
       </tr>
       {rows.map((item) => (
         <tr key={item.id} className="border-t border-slate-800/30">
-          <td className="px-4 py-1.5 text-sm text-slate-300 pl-6">{item.description}</td>
+          <td className="px-4 py-1.5 text-sm text-slate-300 pl-6">
+            {item.description}
+          </td>
           <td className="px-4 py-1.5 text-xs text-slate-500 text-right">
             {item.rate != null ? fmt(item.rate) : ""}
-            {item.units ? <span className="ml-1 text-slate-600">× {item.units}</span> : null}
+            {item.units ? (
+              <span className="ml-1 text-slate-600">× {item.units}</span>
+            ) : null}
           </td>
-          <td className={`px-4 py-1.5 text-sm text-right font-medium ${colorClass}`}>
+          <td
+            className={`px-4 py-1.5 text-sm text-right font-medium ${colorClass}`}
+          >
             {fmt(item.amount)}
           </td>
           <td className="px-4 py-1.5 text-xs text-right text-slate-600">
@@ -56,10 +71,18 @@ function LineItemsTable({ items }: { items: PayslipLineItem[] }) {
       </thead>
       <tbody>
         {earnings.length > 0 && (
-          <Section title="Earnings" rows={earnings} colorClass="text-green-400" />
+          <Section
+            title="Earnings"
+            rows={earnings}
+            colorClass="text-green-400"
+          />
         )}
         {deductions.length > 0 && (
-          <Section title="Deductions" rows={deductions} colorClass="text-red-400" />
+          <Section
+            title="Deductions"
+            rows={deductions}
+            colorClass="text-red-400"
+          />
         )}
       </tbody>
     </table>
@@ -71,7 +94,16 @@ export default function Salaries() {
   const [identities, setIdentities] = useState<PersonIdentity[]>([]);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
-  const [bulkResults, setBulkResults] = useState<{ filename: string; status: string; detail?: string; date?: string; net?: number }[] | null>(null);
+  const [bulkResults, setBulkResults] = useState<
+    | {
+        filename: string;
+        status: string;
+        detail?: string;
+        date?: string;
+        net?: number;
+      }[]
+    | null
+  >(null);
   const [bulkRunning, setBulkRunning] = useState(false);
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
   const [loading, setLoading] = useState(true);
@@ -79,10 +111,12 @@ export default function Salaries() {
   const bulkInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    Promise.all([getSalaries(), getIdentities()]).then(([s, i]) => {
-      setSalaries(s);
-      setIdentities(i);
-    }).finally(() => setLoading(false));
+    Promise.all([getSalaries(), getIdentities()])
+      .then(([s, i]) => {
+        setSalaries(s);
+        setIdentities(i);
+      })
+      .finally(() => setLoading(false));
   }, []);
 
   const nameFor = (s: Salary) => {
@@ -114,7 +148,7 @@ export default function Salaries() {
       setSalaries((prev) => {
         const without = prev.filter((s) => s.id !== created.id);
         return [created, ...without].sort(
-          (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+          (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime(),
         );
       });
       // Auto-expand the newly imported payslip
@@ -142,7 +176,9 @@ export default function Salaries() {
         getSalaries().then(setSalaries);
       }
     } catch (err) {
-      setBulkResults([{ filename: "—", status: "error", detail: (err as Error).message }]);
+      setBulkResults([
+        { filename: "—", status: "error", detail: (err as Error).message },
+      ]);
     } finally {
       setBulkRunning(false);
       if (bulkInputRef.current) bulkInputRef.current.value = "";
@@ -174,7 +210,9 @@ export default function Salaries() {
 
       {/* Upload payslip PDF */}
       <div className="bg-slate-900 rounded-xl border border-slate-800 p-5 space-y-3">
-        <h2 className="text-sm font-medium text-slate-300">Upload payslip PDF</h2>
+        <h2 className="text-sm font-medium text-slate-300">
+          Upload payslip PDF
+        </h2>
         {uploadError && <p className="text-sm text-red-400">{uploadError}</p>}
         <div className="flex items-center gap-3">
           <input
@@ -200,8 +238,12 @@ export default function Salaries() {
       {/* Bulk import (one-time) */}
       <div className="bg-slate-900 rounded-xl border border-slate-800 p-5 space-y-3">
         <div className="flex items-baseline gap-3">
-          <h2 className="text-sm font-medium text-slate-300">Bulk import payslips</h2>
-          <span className="text-xs text-slate-600">Select all PDFs at once</span>
+          <h2 className="text-sm font-medium text-slate-300">
+            Bulk import payslips
+          </h2>
+          <span className="text-xs text-slate-600">
+            Select all PDFs at once
+          </span>
         </div>
         <div className="flex items-center gap-3">
           <input
@@ -219,14 +261,19 @@ export default function Salaries() {
           >
             {bulkRunning ? "Importing…" : "Choose PDFs…"}
           </button>
-          {bulkRunning && <span className="text-xs text-slate-500">Parsing PDFs, this may take a moment…</span>}
+          {bulkRunning && (
+            <span className="text-xs text-slate-500">
+              Parsing PDFs, this may take a moment…
+            </span>
+          )}
         </div>
         {bulkResults && (
           <div className="mt-2 space-y-1 max-h-64 overflow-y-auto">
             <p className="text-xs text-slate-400 mb-2">
-              {bulkResults.filter((r) => r.status === "imported").length} imported ·{" "}
-              {bulkResults.filter((r) => r.status === "skipped").length} skipped ·{" "}
-              {bulkResults.filter((r) => r.status === "error").length} errors
+              {bulkResults.filter((r) => r.status === "imported").length}{" "}
+              imported ·{" "}
+              {bulkResults.filter((r) => r.status === "skipped").length} skipped
+              · {bulkResults.filter((r) => r.status === "error").length} errors
             </p>
             {bulkResults.map((r, i) => (
               <div key={i} className="flex items-center gap-2 text-xs">
@@ -235,16 +282,23 @@ export default function Salaries() {
                     r.status === "imported"
                       ? "text-green-400"
                       : r.status === "skipped"
-                      ? "text-slate-500"
-                      : "text-red-400"
+                        ? "text-slate-500"
+                        : "text-red-400"
                   }
                 >
-                  {r.status === "imported" ? "✓" : r.status === "skipped" ? "–" : "✗"}
+                  {r.status === "imported"
+                    ? "✓"
+                    : r.status === "skipped"
+                      ? "–"
+                      : "✗"}
                 </span>
-                <span className="text-slate-400 truncate max-w-xs">{r.filename}</span>
+                <span className="text-slate-400 truncate max-w-xs">
+                  {r.filename}
+                </span>
                 {r.status === "imported" && r.date && (
                   <span className="text-slate-600">
-                    {new Date(r.date).toLocaleDateString("en-GB")} · {r.net != null ? fmt(r.net) : ""}
+                    {new Date(r.date).toLocaleDateString("en-GB")} ·{" "}
+                    {r.net != null ? fmt(r.net) : ""}
                   </span>
                 )}
                 {r.detail && r.status !== "imported" && (
@@ -280,25 +334,40 @@ export default function Salaries() {
                   onClick={() => s.line_items.length > 0 && toggleExpand(s.id)}
                 >
                   <td className="px-4 py-3 text-slate-600 text-xs select-none">
-                    {s.line_items.length > 0 ? (expanded.has(s.id) ? "▾" : "▸") : ""}
+                    {s.line_items.length > 0
+                      ? expanded.has(s.id)
+                        ? "▾"
+                        : "▸"
+                      : ""}
                   </td>
-                  <td className="px-4 py-3">{new Date(s.date).toLocaleDateString("en-GB")}</td>
+                  <td className="px-4 py-3">
+                    {new Date(s.date).toLocaleDateString("en-GB")}
+                  </td>
                   <td className="px-4 py-3">
                     {nameFor(s) ? (
-                      <span className="text-blue-400 text-sm">{nameFor(s)}</span>
+                      <span className="text-blue-400 text-sm">
+                        {nameFor(s)}
+                      </span>
                     ) : (
                       <span className="text-slate-600 text-xs">—</span>
                     )}
                   </td>
-                  <td className="px-4 py-3 text-slate-300">{s.employer ?? "—"}</td>
+                  <td className="px-4 py-3 text-slate-300">
+                    {s.employer ?? "—"}
+                  </td>
                   <td className="px-4 py-3 text-right text-slate-400">
                     {s.gross_amount != null ? fmt(s.gross_amount) : "—"}
                   </td>
                   <td className="px-4 py-3 text-right text-green-400 font-medium">
                     {fmt(s.net_amount)}
                   </td>
-                  <td className="px-4 py-3 text-slate-500 text-xs">{s.notes ?? ""}</td>
-                  <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                  <td className="px-4 py-3 text-slate-500 text-xs">
+                    {s.notes ?? ""}
+                  </td>
+                  <td
+                    className="px-4 py-3"
+                    onClick={(e) => e.stopPropagation()}
+                  >
                     <button
                       onClick={() => handleDelete(s.id)}
                       className="text-xs text-slate-600 hover:text-red-400"
@@ -308,7 +377,10 @@ export default function Salaries() {
                   </td>
                 </tr>
                 {expanded.has(s.id) && s.line_items.length > 0 && (
-                  <tr key={`${s.id}-items`} className="border-b border-slate-800">
+                  <tr
+                    key={`${s.id}-items`}
+                    className="border-b border-slate-800"
+                  >
                     <td colSpan={8} className="p-0">
                       <LineItemsTable items={s.line_items} />
                     </td>
@@ -319,7 +391,9 @@ export default function Salaries() {
           </tbody>
         </table>
         {salaries.length === 0 && (
-          <p className="px-4 py-6 text-slate-500 text-sm text-center">No payslips yet.</p>
+          <p className="px-4 py-6 text-slate-500 text-sm text-center">
+            No payslips yet.
+          </p>
         )}
       </div>
     </div>
