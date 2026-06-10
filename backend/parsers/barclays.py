@@ -112,10 +112,15 @@ def parse(pdf_path: str, statement_year: int) -> pd.DataFrame:
     to_drop = []
     for i in range(1, len(df)):
         row = df.iloc[i]
-        if pd.isna(row["Date"]) and pd.isna(row[["Money out", "Money in", "Balance"]]).all():
+        if (
+            pd.isna(row["Date"])
+            and pd.isna(row[["Money out", "Money in", "Balance"]]).all()
+        ):
             extra = str(row["Description"]) if pd.notna(row["Description"]) else ""
             if extra:
-                df.at[i - 1, "Description"] = f"{df.at[i - 1, 'Description']}\n{extra}".strip()
+                df.at[i - 1, "Description"] = (
+                    f"{df.at[i - 1, 'Description']}\n{extra}".strip()
+                )
             to_drop.append(i)
     df = df.drop(index=to_drop).reset_index(drop=True)
 

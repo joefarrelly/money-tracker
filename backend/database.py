@@ -25,6 +25,7 @@ def get_db():
 
 def init_db():
     import models  # noqa: F401 — registers all models before create_all
+
     Base.metadata.create_all(bind=engine)
     _migrate()
     _seed_default_categories()
@@ -49,14 +50,18 @@ def _migrate():
             rows = conn.execute(text(f"PRAGMA table_info({table})")).fetchall()
             existing = {r[1] for r in rows}
             if column not in existing:
-                conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {col_type}"))
+                conn.execute(
+                    text(f"ALTER TABLE {table} ADD COLUMN {column} {col_type}")
+                )
                 conn.commit()
 
         # Partial unique index: prevent duplicate (date, ni_number) when ni_number is set
-        conn.execute(text(
-            "CREATE UNIQUE INDEX IF NOT EXISTS idx_salary_date_ni "
-            "ON salaries(date, ni_number) WHERE ni_number IS NOT NULL"
-        ))
+        conn.execute(
+            text(
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_salary_date_ni "
+                "ON salaries(date, ni_number) WHERE ni_number IS NOT NULL"
+            )
+        )
         conn.commit()
 
 
@@ -68,7 +73,13 @@ def _seed_builtin_formats():
         builtin = [
             {
                 "name": "Barclays",
-                "column_headers": ["Date", "Description", "Money out", "Money in", "Balance"],
+                "column_headers": [
+                    "Date",
+                    "Description",
+                    "Money out",
+                    "Money in",
+                    "Balance",
+                ],
                 "date_col": 0,
                 "description_col": 1,
                 "money_out_col": 2,
@@ -96,7 +107,11 @@ def _seed_builtin_formats():
             },
         ]
         for fmt_data in builtin:
-            if not db.query(StatementFormat).filter_by(name=fmt_data["name"], is_builtin=True).first():
+            if (
+                not db.query(StatementFormat)
+                .filter_by(name=fmt_data["name"], is_builtin=True)
+                .first()
+            ):
                 db.add(StatementFormat(**fmt_data))
         db.commit()
     finally:

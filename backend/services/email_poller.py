@@ -12,7 +12,9 @@ logger = logging.getLogger(__name__)
 IMAP_HOST = "imap.gmail.com"
 IMAP_PORT = 993
 
-EMAIL_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "uploads", "email"))
+EMAIL_DIR = os.path.abspath(
+    os.path.join(os.path.dirname(__file__), "..", "uploads", "email")
+)
 
 
 def _env(key: str) -> str:
@@ -98,24 +100,28 @@ def poll_emails(db) -> int:
                 if db.query(EmailImport).filter_by(message_id=uid).first():
                     continue
 
-                safe = re.sub(r"[^\w\-.]", "_", f"{re.sub(r'[<>]', '', message_id)}_{filename}")[:120]
+                safe = re.sub(
+                    r"[^\w\-.]", "_", f"{re.sub(r'[<>]', '', message_id)}_{filename}"
+                )[:120]
                 save_path = os.path.join(EMAIL_DIR, safe)
                 with open(save_path, "wb") as f:
                     f.write(payload)
 
                 raw_data, error = _parse_pdf(save_path, import_type, db)
-                db.add(EmailImport(
-                    message_id=uid,
-                    subject=subject,
-                    sender=sender,
-                    received_at=received_at,
-                    filename=filename,
-                    import_type=import_type,
-                    status="pending" if raw_data else "failed",
-                    error_message=error,
-                    file_path=save_path,
-                    raw_data=raw_data,
-                ))
+                db.add(
+                    EmailImport(
+                        message_id=uid,
+                        subject=subject,
+                        sender=sender,
+                        received_at=received_at,
+                        filename=filename,
+                        import_type=import_type,
+                        status="pending" if raw_data else "failed",
+                        error_message=error,
+                        file_path=save_path,
+                        raw_data=raw_data,
+                    )
+                )
                 new_count += 1
 
         except Exception as exc:
@@ -151,6 +157,7 @@ def _parse_pdf(file_path: str, import_type: str, db) -> tuple[dict | None, str |
 def _parse_payslip(file_path: str) -> tuple[dict | None, str | None]:
     try:
         from parsers.payslip import parse_payslip_pdf
+
         p = parse_payslip_pdf(file_path)
         if p["date"] is None:
             return None, "Could not extract date from payslip"
@@ -178,10 +185,15 @@ def _parse_bank_statement(file_path: str, db) -> tuple[dict | None, str | None]:
 
         mapping = preview["proposed_mapping"]
         year = preview.get("detected_year") if not preview.get("needs_year") else None
-        df = universal.parse_with_mapping(file_path, mapping, year=year, skip_patterns=[])
+        df = universal.parse_with_mapping(
+            file_path, mapping, year=year, skip_patterns=[]
+        )
 
         if df.empty:
-            return None, "No transactions could be parsed — upload manually via the Upload page"
+            return (
+                None,
+                "No transactions could be parsed — upload manually via the Upload page",
+            )
 
         text = universal._extract_text(file_path)
         account_number = universal.detect_account_number(text) or "unknown"
@@ -190,12 +202,14 @@ def _parse_bank_statement(file_path: str, db) -> tuple[dict | None, str | None]:
         txns = []
         for _, row in df.iterrows():
             bal = row.get("balance")
-            txns.append({
-                "date": str(row["date"].date()),
-                "description": str(row["description"]),
-                "amount": round(float(row["amount"]), 2),
-                "balance": round(float(bal), 2) if bal and bal == bal else None,
-            })
+            txns.append(
+                {
+                    "date": str(row["date"].date()),
+                    "description": str(row["description"]),
+                    "amount": round(float(row["amount"]), 2),
+                    "balance": round(float(bal), 2) if bal and bal == bal else None,
+                }
+            )
 
         return {
             "account_number": account_number,

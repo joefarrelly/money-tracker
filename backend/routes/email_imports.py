@@ -1,11 +1,11 @@
 import os
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from database import SessionLocal, get_db
+from database import get_db
 from models import Account, EmailImport, PayslipLineItem, Salary, Transaction
 
 router = APIRouter()
@@ -47,6 +47,7 @@ def list_imports(status: str | None = None, db: Session = Depends(get_db)):
 @router.post("/poll", response_model=PollResult)
 def trigger_poll(db: Session = Depends(get_db)):
     from services.email_poller import poll_emails
+
     try:
         count = poll_emails(db)
     except RuntimeError as exc:
@@ -63,7 +64,9 @@ def confirm_import(import_id: int, db: Session = Depends(get_db)):
     if not record:
         raise HTTPException(status_code=404, detail="Import not found")
     if record.status != "pending":
-        raise HTTPException(status_code=409, detail=f"Import is already {record.status}")
+        raise HTTPException(
+            status_code=409, detail=f"Import is already {record.status}"
+        )
     if not record.raw_data:
         raise HTTPException(status_code=422, detail="No parsed data available")
 
@@ -114,6 +117,7 @@ def dismiss_import(import_id: int, db: Session = Depends(get_db)):
 
 # ── Internal helpers ──────────────────────────────────────────────────────────
 
+
 def _confirm_payslip(record: EmailImport, db: Session):
     d = record.raw_data
     ni = d.get("ni_number") or None
@@ -141,15 +145,17 @@ def _confirm_payslip(record: EmailImport, db: Session):
     db.flush()
 
     for item in d.get("line_items", []):
-        db.add(PayslipLineItem(
-            salary_id=salary.id,
-            description=item["description"],
-            rate=item.get("rate"),
-            units=item.get("units"),
-            amount=item["amount"],
-            this_year_amount=item.get("this_year_amount"),
-            line_type=item["line_type"],
-        ))
+        db.add(
+            PayslipLineItem(
+                salary_id=salary.id,
+                description=item["description"],
+                rate=item.get("rate"),
+                units=item.get("units"),
+                amount=item["amount"],
+                this_year_amount=item.get("this_year_amount"),
+                line_type=item["line_type"],
+            )
+        )
 
 
 def _confirm_bank_statement(record: EmailImport, db: Session):
@@ -165,21 +171,27 @@ def _confirm_bank_statement(record: EmailImport, db: Session):
 
     added = 0
     for txn in d.get("transactions", []):
-        exists = db.query(Transaction).filter_by(
-            account_id=acc.id,
-            date=txn["date"],
-            description=txn["description"],
-            amount=txn["amount"],
-        ).first()
-        if not exists:
-            db.add(Transaction(
+        exists = (
+            db.query(Transaction)
+            .filter_by(
                 account_id=acc.id,
                 date=txn["date"],
                 description=txn["description"],
                 amount=txn["amount"],
-                balance=txn.get("balance"),
-                source_file=record.filename,
-            ))
+            )
+            .first()
+        )
+        if not exists:
+            db.add(
+                Transaction(
+                    account_id=acc.id,
+                    date=txn["date"],
+                    description=txn["description"],
+                    amount=txn["amount"],
+                    balance=txn.get("balance"),
+                    source_file=record.filename,
+                )
+            )
             added += 1
 
 

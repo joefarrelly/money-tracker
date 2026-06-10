@@ -58,7 +58,11 @@ def parse(pdf_path: str) -> pd.DataFrame:
     for i in range(1, len(df)):
         row = df.iloc[i]
         if pd.isna(row["Date"]) and pd.isna(row[["Amount", "Balance"]]).all():
-            extra = str(row["Transaction details"]) if pd.notna(row["Transaction details"]) else ""
+            extra = (
+                str(row["Transaction details"])
+                if pd.notna(row["Transaction details"])
+                else ""
+            )
             if extra:
                 df.at[i - 1, "Transaction details"] = (
                     f"{df.at[i - 1, 'Transaction details']}\n{extra}".strip()
@@ -94,7 +98,9 @@ def parse(pdf_path: str) -> pd.DataFrame:
 
     # Drop balance-only rows
     df = df[~(df["_out"].isna() & df["_in"].isna())].reset_index(drop=True)
-    df = df[~df["Description"].isin(["Closing balance", "Opening balance"])].reset_index(drop=True)
+    df = df[
+        ~df["Description"].isin(["Closing balance", "Opening balance"])
+    ].reset_index(drop=True)
     df = df.rename(columns={"Transaction details": "Description"})
 
     result = pd.DataFrame()

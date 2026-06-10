@@ -36,6 +36,7 @@ async def _poll_loop():
             db = SessionLocal()
             try:
                 from services.email_poller import poll_emails
+
                 count = await asyncio.to_thread(poll_emails, db)
                 if count:
                     logger.info("Email poller: %d new import(s)", count)
@@ -70,13 +71,17 @@ app.add_middleware(
 
 app.include_router(accounts_router, prefix="/api/accounts", tags=["accounts"])
 app.include_router(categories_router, prefix="/api/categories", tags=["categories"])
-app.include_router(transactions_router, prefix="/api/transactions", tags=["transactions"])
+app.include_router(
+    transactions_router, prefix="/api/transactions", tags=["transactions"]
+)
 app.include_router(upload_router, prefix="/api/upload", tags=["upload"])
 app.include_router(salaries_router, prefix="/api/salaries", tags=["salaries"])
 app.include_router(settings_router, prefix="/api/settings", tags=["settings"])
 app.include_router(dashboard_router, prefix="/api/dashboard", tags=["dashboard"])
 app.include_router(transfers_router, prefix="/api/transfers", tags=["transfers"])
-app.include_router(email_imports_router, prefix="/api/email-imports", tags=["email-imports"])
+app.include_router(
+    email_imports_router, prefix="/api/email-imports", tags=["email-imports"]
+)
 
 _STATIC_DIR = Path(__file__).parent / "static_frontend"
 if _STATIC_DIR.exists():
@@ -92,4 +97,5 @@ if _STATIC_DIR.exists():
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run("app:app", host="0.0.0.0", port=8000, reload=True)

@@ -3,7 +3,6 @@
 from calendar import monthrange
 from datetime import date
 
-from sqlalchemy import extract
 from sqlalchemy.orm import Session
 
 from models import RecurringExpense, Salary, Transaction
@@ -21,18 +20,26 @@ def monthly_summary(db: Session, year: int, month: int) -> dict:
     start = date(year, month, 1)
     end = date(year, month, monthrange(year, month)[1])
 
-    txns = db.query(Transaction).filter(
-        Transaction.date >= start,
-        Transaction.date <= end,
-    ).all()
+    txns = (
+        db.query(Transaction)
+        .filter(
+            Transaction.date >= start,
+            Transaction.date <= end,
+        )
+        .all()
+    )
 
     total_in = sum(t.amount for t in txns if t.amount > 0 and not t.is_transfer)
     total_out = abs(sum(t.amount for t in txns if t.amount < 0 and not t.is_transfer))
 
-    salary_rows = db.query(Salary).filter(
-        Salary.date >= start,
-        Salary.date <= end,
-    ).all()
+    salary_rows = (
+        db.query(Salary)
+        .filter(
+            Salary.date >= start,
+            Salary.date <= end,
+        )
+        .all()
+    )
     salary_total = sum(s.net_amount for s in salary_rows)
 
     recurring = db.query(RecurringExpense).filter_by(is_active=True).all()
@@ -55,23 +62,26 @@ def monthly_summary(db: Session, year: int, month: int) -> dict:
     recurring_actuals = []
     for r in recurring:
         matching = [
-            t for t in txns
+            t
+            for t in txns
             if t.amount < 0 and r.merchant_pattern.lower() in t.description.lower()
         ]
         actual = round(abs(sum(t.amount for t in matching)), 2)
-        recurring_actuals.append({
-            "id": r.id,
-            "merchant_pattern": r.merchant_pattern,
-            "typical_amount": r.typical_amount,
-            "monthly_cost": round(r.monthly_cost, 2),
-            "frequency": r.frequency,
-            "actual_amount": actual,
-            "found_this_month": actual > 0,
-            "is_over": actual > 0 and actual > r.monthly_cost * 1.15,
-            "category_id": r.category_id,
-            "category_name": r.category.name if r.category else None,
-            "category_color": r.category.color if r.category else None,
-        })
+        recurring_actuals.append(
+            {
+                "id": r.id,
+                "merchant_pattern": r.merchant_pattern,
+                "typical_amount": r.typical_amount,
+                "monthly_cost": round(r.monthly_cost, 2),
+                "frequency": r.frequency,
+                "actual_amount": actual,
+                "found_this_month": actual > 0,
+                "is_over": actual > 0 and actual > r.monthly_cost * 1.15,
+                "category_id": r.category_id,
+                "category_name": r.category.name if r.category else None,
+                "category_color": r.category.color if r.category else None,
+            }
+        )
 
     return {
         "year": year,
@@ -83,7 +93,12 @@ def monthly_summary(db: Session, year: int, month: int) -> dict:
         "recurring_total": round(recurring_monthly_total, 2),
         "disposable_income": round(disposable, 2),
         "category_breakdown": [
-            {"name": k, "amount": round(v["amount"], 2), "color": v["color"], "count": v["count"]}
+            {
+                "name": k,
+                "amount": round(v["amount"], 2),
+                "color": v["color"],
+                "count": v["count"],
+            }
             for k, v in sorted(cat_breakdown.items(), key=lambda x: -x[1]["amount"])
         ],
         "transaction_count": len(txns),
@@ -118,7 +133,6 @@ def monthly_summary(db: Session, year: int, month: int) -> dict:
 
 def trend_summary(db: Session, months: int = 6) -> list[dict]:
     """Return monthly summaries for the last N months."""
-    from datetime import datetime
     from dateutil.relativedelta import relativedelta
 
     today = date.today()

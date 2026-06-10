@@ -1,18 +1,43 @@
 import { useEffect, useState } from "react";
-import { getMonthlySummary, getTrend, getRecentTransactions } from "../api/client";
+import {
+  getMonthlySummary,
+  getTrend,
+  getRecentTransactions,
+} from "../api/client";
 import { Spinner } from "../components/Spinner";
-import type { MonthlySummary, Transaction, RecurringActual, PayslipLineItem } from "../types";
+import type {
+  MonthlySummary,
+  Transaction,
+  RecurringActual,
+  PayslipLineItem,
+} from "../types";
 
 const MONTHS = [
-  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
 ];
 
 const fmt = (v: number) =>
-  "£" + Math.abs(v).toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  "£" +
+  Math.abs(v).toLocaleString("en-GB", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
 
 function prevMonthOf(year: number, month: number) {
-  return month === 1 ? { year: year - 1, month: 12 } : { year, month: month - 1 };
+  return month === 1
+    ? { year: year - 1, month: 12 }
+    : { year, month: month - 1 };
 }
 
 // ── Stat card ──────────────────────────────────────────────────────────────────
@@ -51,7 +76,9 @@ function StatCard({
   const yoyEl = makeDelta(yoyDelta, "vs last year");
 
   return (
-    <div className={`bg-slate-900 rounded-xl p-5 border border-slate-800 ${accentClass}`}>
+    <div
+      className={`bg-slate-900 rounded-xl p-5 border border-slate-800 ${accentClass}`}
+    >
       <p className="text-xs text-slate-400 uppercase tracking-wide">{label}</p>
       <p className={`text-2xl font-bold mt-1 ${color}`}>{value}</p>
       <div className="mt-1 space-y-0.5">
@@ -65,7 +92,11 @@ function StatCard({
 
 // ── Category horizontal bars ───────────────────────────────────────────────────
 
-function CategoryBars({ breakdown }: { breakdown: MonthlySummary["category_breakdown"] }) {
+function CategoryBars({
+  breakdown,
+}: {
+  breakdown: MonthlySummary["category_breakdown"];
+}) {
   if (breakdown.length === 0) {
     return (
       <div className="bg-slate-900 rounded-xl p-5 border border-slate-800 flex items-center justify-center h-full">
@@ -78,12 +109,16 @@ function CategoryBars({ breakdown }: { breakdown: MonthlySummary["category_break
 
   return (
     <div className="bg-slate-900 rounded-xl p-5 border border-slate-800">
-      <h2 className="text-sm font-medium text-slate-300 mb-4">Spending by category</h2>
+      <h2 className="text-sm font-medium text-slate-300 mb-4">
+        Spending by category
+      </h2>
       <div className="space-y-3">
         {breakdown.slice(0, 8).map((cat) => (
           <div key={cat.name}>
             <div className="flex justify-between text-xs mb-1">
-              <span className="text-slate-300 truncate max-w-[60%]">{cat.name}</span>
+              <span className="text-slate-300 truncate max-w-[60%]">
+                {cat.name}
+              </span>
               <span className="text-slate-400">
                 {fmt(cat.amount)}
                 <span className="text-slate-600 ml-1">({cat.count})</span>
@@ -107,7 +142,11 @@ function CategoryBars({ breakdown }: { breakdown: MonthlySummary["category_break
 
 // ── Payslip breakdown ──────────────────────────────────────────────────────────
 
-function PayslipBreakdown({ salaryEntries }: { salaryEntries: MonthlySummary["salary_entries"] }) {
+function PayslipBreakdown({
+  salaryEntries,
+}: {
+  salaryEntries: MonthlySummary["salary_entries"];
+}) {
   if (salaryEntries.length === 0) {
     return (
       <div className="bg-slate-900 rounded-xl p-5 border border-slate-800 flex items-center justify-center h-full">
@@ -120,14 +159,20 @@ function PayslipBreakdown({ salaryEntries }: { salaryEntries: MonthlySummary["sa
     <div className="bg-slate-900 rounded-xl p-5 border border-slate-800 space-y-5">
       <h2 className="text-sm font-medium text-slate-300">Payslip breakdown</h2>
       {salaryEntries.map((s) => {
-        const earnings = s.line_items.filter((li) => li.line_type === "earning");
-        const deductions = s.line_items.filter((li) => li.line_type === "deduction");
+        const earnings = s.line_items.filter(
+          (li) => li.line_type === "earning",
+        );
+        const deductions = s.line_items.filter(
+          (li) => li.line_type === "deduction",
+        );
         const hasItems = s.line_items.length > 0;
 
         return (
           <div key={s.id}>
             {salaryEntries.length > 1 && (
-              <p className="text-xs text-slate-500 mb-2">{s.employer ?? "Employer"}</p>
+              <p className="text-xs text-slate-500 mb-2">
+                {s.employer ?? "Employer"}
+              </p>
             )}
 
             {hasItems ? (
@@ -142,7 +187,9 @@ function PayslipBreakdown({ salaryEntries }: { salaryEntries: MonthlySummary["sa
                 )}
                 {deductions.length > 0 && (
                   <div className="mt-2 space-y-1">
-                    <p className="text-xs text-slate-500 uppercase tracking-wide">Deductions</p>
+                    <p className="text-xs text-slate-500 uppercase tracking-wide">
+                      Deductions
+                    </p>
                     {deductions.map((li, i) => (
                       <DeductionRow key={i} li={li} />
                     ))}
@@ -202,14 +249,24 @@ function SpendingProgress({
   const remaining = salary - spent;
 
   const barColor =
-    spentPct >= 100 ? "bg-red-500" : spentPct >= 85 ? "bg-amber-500" : "bg-emerald-500";
+    spentPct >= 100
+      ? "bg-red-500"
+      : spentPct >= 85
+        ? "bg-amber-500"
+        : "bg-emerald-500";
 
   return (
     <div className="bg-slate-900 rounded-xl p-5 border border-slate-800">
       <div className="flex justify-between items-baseline mb-3">
-        <h2 className="text-sm font-medium text-slate-300">Spending vs salary</h2>
-        <span className={`text-sm font-semibold ${remaining >= 0 ? "text-emerald-400" : "text-red-400"}`}>
-          {remaining >= 0 ? `${fmt(remaining)} remaining` : `${fmt(remaining)} over`}
+        <h2 className="text-sm font-medium text-slate-300">
+          Spending vs salary
+        </h2>
+        <span
+          className={`text-sm font-semibold ${remaining >= 0 ? "text-emerald-400" : "text-red-400"}`}
+        >
+          {remaining >= 0
+            ? `${fmt(remaining)} remaining`
+            : `${fmt(remaining)} over`}
         </span>
       </div>
 
@@ -248,7 +305,9 @@ function SpendingProgress({
 function RecentTransactions({ transactions }: { transactions: Transaction[] }) {
   return (
     <div className="bg-slate-900 rounded-xl p-5 border border-slate-800">
-      <h2 className="text-sm font-medium text-slate-300 mb-3">Recent transactions</h2>
+      <h2 className="text-sm font-medium text-slate-300 mb-3">
+        Recent transactions
+      </h2>
       {transactions.length === 0 ? (
         <p className="text-slate-500 text-sm">No transactions this month</p>
       ) : (
@@ -263,7 +322,9 @@ function RecentTransactions({ transactions }: { transactions: Transaction[] }) {
                   />
                 )}
                 <div className="min-w-0">
-                  <p className="text-sm text-slate-200 truncate">{t.description}</p>
+                  <p className="text-sm text-slate-200 truncate">
+                    {t.description}
+                  </p>
                   <p className="text-xs text-slate-500">{t.date}</p>
                 </div>
               </div>
@@ -285,13 +346,21 @@ function RecentTransactions({ transactions }: { transactions: Transaction[] }) {
 
 // ── Recurring status + by-category (tabbed) ────────────────────────────────────
 
-function RecurringStatus({ actuals, salary }: { actuals: RecurringActual[]; salary: number }) {
+function RecurringStatus({
+  actuals,
+  salary,
+}: {
+  actuals: RecurringActual[];
+  salary: number;
+}) {
   const [tab, setTab] = useState<"status" | "categories">("status");
 
   if (actuals.length === 0) {
     return (
       <div className="bg-slate-900 rounded-xl p-5 border border-slate-800">
-        <h2 className="text-sm font-medium text-slate-300 mb-3">Recurring expenses</h2>
+        <h2 className="text-sm font-medium text-slate-300 mb-3">
+          Recurring expenses
+        </h2>
         <p className="text-slate-500 text-sm">No recurring expenses tracked</p>
       </div>
     );
@@ -302,12 +371,19 @@ function RecurringStatus({ actuals, salary }: { actuals: RecurringActual[]; sala
   const over = actuals.filter((a) => a.is_over);
 
   // Category breakdown
-  const catMap = new Map<string, { color: string; total: number; count: number }>();
+  const catMap = new Map<
+    string,
+    { color: string; total: number; count: number }
+  >();
   for (const a of actuals) {
     const key = a.category_name ?? "Uncategorised";
     const color = a.category_color ?? "#6b7280";
     const entry = catMap.get(key) ?? { color, total: 0, count: 0 };
-    catMap.set(key, { color, total: entry.total + a.monthly_cost, count: entry.count + 1 });
+    catMap.set(key, {
+      color,
+      total: entry.total + a.monthly_cost,
+      count: entry.count + 1,
+    });
   }
   const catBreakdown = Array.from(catMap.entries())
     .map(([name, v]) => ({ name, ...v }))
@@ -317,12 +393,16 @@ function RecurringStatus({ actuals, salary }: { actuals: RecurringActual[]; sala
   return (
     <div className="bg-slate-900 rounded-xl p-5 border border-slate-800">
       <div className="flex items-center justify-between mb-3">
-        <h2 className="text-sm font-medium text-slate-300">Recurring expenses</h2>
+        <h2 className="text-sm font-medium text-slate-300">
+          Recurring expenses
+        </h2>
         <div className="flex rounded-lg overflow-hidden border border-slate-700 text-xs">
           <button
             onClick={() => setTab("status")}
             className={`px-3 py-1 transition-colors ${
-              tab === "status" ? "bg-gray-700 text-white" : "text-slate-400 hover:bg-slate-800"
+              tab === "status"
+                ? "bg-gray-700 text-white"
+                : "text-slate-400 hover:bg-slate-800"
             }`}
           >
             This month
@@ -330,7 +410,9 @@ function RecurringStatus({ actuals, salary }: { actuals: RecurringActual[]; sala
           <button
             onClick={() => setTab("categories")}
             className={`px-3 py-1 transition-colors ${
-              tab === "categories" ? "bg-gray-700 text-white" : "text-slate-400 hover:bg-slate-800"
+              tab === "categories"
+                ? "bg-gray-700 text-white"
+                : "text-slate-400 hover:bg-slate-800"
             }`}
           >
             By category
@@ -342,13 +424,25 @@ function RecurringStatus({ actuals, salary }: { actuals: RecurringActual[]; sala
         <>
           <div className="flex gap-2 text-xs mb-3">
             <span className="text-emerald-400">{found.length} seen</span>
-            {over.length > 0 && <span className="text-amber-400">{over.length} over</span>}
-            {missing.length > 0 && <span className="text-slate-500">{missing.length} pending</span>}
+            {over.length > 0 && (
+              <span className="text-amber-400">{over.length} over</span>
+            )}
+            {missing.length > 0 && (
+              <span className="text-slate-500">{missing.length} pending</span>
+            )}
           </div>
           <div className="space-y-2 max-h-72 overflow-y-auto">
-            {over.map((a) => <RecurringRow key={a.id} a={a} />)}
-            {found.filter((a) => !a.is_over).map((a) => <RecurringRow key={a.id} a={a} />)}
-            {missing.map((a) => <RecurringRow key={a.id} a={a} />)}
+            {over.map((a) => (
+              <RecurringRow key={a.id} a={a} />
+            ))}
+            {found
+              .filter((a) => !a.is_over)
+              .map((a) => (
+                <RecurringRow key={a.id} a={a} />
+              ))}
+            {missing.map((a) => (
+              <RecurringRow key={a.id} a={a} />
+            ))}
           </div>
         </>
       ) : (
@@ -359,14 +453,19 @@ function RecurringStatus({ actuals, salary }: { actuals: RecurringActual[]; sala
               <div key={cat.name}>
                 <div className="flex justify-between text-xs mb-1">
                   <span className="flex items-center gap-1.5 text-slate-300">
-                    <span className="w-2 h-2 rounded-full" style={{ backgroundColor: cat.color }} />
+                    <span
+                      className="w-2 h-2 rounded-full"
+                      style={{ backgroundColor: cat.color }}
+                    />
                     {cat.name}
                     <span className="text-slate-600">({cat.count})</span>
                   </span>
                   <span className="text-slate-400">
                     {fmt(cat.total)}/mo
                     {salary > 0 && (
-                      <span className="text-slate-600 ml-1">{pct.toFixed(1)}%</span>
+                      <span className="text-slate-600 ml-1">
+                        {pct.toFixed(1)}%
+                      </span>
                     )}
                   </span>
                 </div>
@@ -405,7 +504,11 @@ function RecurringRow({ a }: { a: RecurringActual }) {
 
   if (!a.found_this_month) {
     statusDot = "bg-gray-600";
-    amountEl = <span className="text-xs text-slate-500">pending {fmt(a.monthly_cost)}</span>;
+    amountEl = (
+      <span className="text-xs text-slate-500">
+        pending {fmt(a.monthly_cost)}
+      </span>
+    );
   } else if (a.is_over) {
     statusDot = "bg-amber-400";
     amountEl = (
@@ -416,7 +519,9 @@ function RecurringRow({ a }: { a: RecurringActual }) {
     );
   } else {
     statusDot = "bg-emerald-500";
-    amountEl = <span className="text-xs text-slate-300">{fmt(a.actual_amount)}</span>;
+    amountEl = (
+      <span className="text-xs text-slate-300">{fmt(a.actual_amount)}</span>
+    );
   }
 
   return (
@@ -429,8 +534,12 @@ function RecurringRow({ a }: { a: RecurringActual }) {
             style={{ backgroundColor: a.category_color }}
           />
         )}
-        <span className="text-sm text-slate-300 truncate">{a.merchant_pattern}</span>
-        {a.frequency === "annual" && <span className="text-xs text-slate-600">/yr</span>}
+        <span className="text-sm text-slate-300 truncate">
+          {a.merchant_pattern}
+        </span>
+        {a.frequency === "annual" && (
+          <span className="text-xs text-slate-600">/yr</span>
+        )}
       </div>
       {amountEl}
     </div>
@@ -444,7 +553,9 @@ function TrendTable({ trend }: { trend: MonthlySummary[] }) {
 
   return (
     <div className="bg-slate-900 rounded-xl p-5 border border-slate-800">
-      <h2 className="text-sm font-medium text-slate-300 mb-4">12-month summary</h2>
+      <h2 className="text-sm font-medium text-slate-300 mb-4">
+        12-month summary
+      </h2>
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
@@ -463,14 +574,24 @@ function TrendTable({ trend }: { trend: MonthlySummary[] }) {
                   ? Math.round(((m.salary - m.total_out) / m.salary) * 100)
                   : null;
               return (
-                <tr key={`${m.year}-${m.month}`} className="border-b border-slate-800/50 last:border-0">
+                <tr
+                  key={`${m.year}-${m.month}`}
+                  className="border-b border-slate-800/50 last:border-0"
+                >
                   <td className="py-2.5 text-slate-300">
                     {MONTHS[m.month - 1]} {m.year}
                   </td>
-                  <td className="py-2.5 text-right text-green-400">{fmt(m.salary)}</td>
-                  <td className="py-2.5 text-right text-red-400">{fmt(m.total_out)}</td>
-                  <td className={`py-2.5 text-right font-medium ${m.net >= 0 ? "text-emerald-400" : "text-red-400"}`}>
-                    {m.net >= 0 ? "+" : "−"}{fmt(m.net)}
+                  <td className="py-2.5 text-right text-green-400">
+                    {fmt(m.salary)}
+                  </td>
+                  <td className="py-2.5 text-right text-red-400">
+                    {fmt(m.total_out)}
+                  </td>
+                  <td
+                    className={`py-2.5 text-right font-medium ${m.net >= 0 ? "text-emerald-400" : "text-red-400"}`}
+                  >
+                    {m.net >= 0 ? "+" : "−"}
+                    {fmt(m.net)}
                   </td>
                   <td className="py-2.5 text-right">
                     {rate != null ? (
@@ -479,8 +600,8 @@ function TrendTable({ trend }: { trend: MonthlySummary[] }) {
                           rate >= 20
                             ? "text-emerald-400"
                             : rate >= 0
-                            ? "text-amber-400"
-                            : "text-red-400"
+                              ? "text-amber-400"
+                              : "text-red-400"
                         }
                       >
                         {rate}%
@@ -538,28 +659,41 @@ export default function Dashboard() {
       setYear(p.year);
       setMonth(p.month);
     } else {
-      const next = month === 12 ? { year: year + 1, month: 1 } : { year, month: month + 1 };
+      const next =
+        month === 12
+          ? { year: year + 1, month: 1 }
+          : { year, month: month + 1 };
       setYear(next.year);
       setMonth(next.month);
     }
   }
 
-  const delta = (cur: number, prev: number) => (prevSummary ? cur - prev : null);
-  const yoyDelta = (cur: number, yoy: number) => (yoySummary ? cur - yoy : null);
+  const delta = (cur: number, prev: number) =>
+    prevSummary ? cur - prev : null;
+  const yoyDelta = (cur: number, yoy: number) =>
+    yoySummary ? cur - yoy : null;
 
   const savingsRate =
     summary && summary.salary > 0
-      ? Math.round(((summary.salary - summary.total_out) / summary.salary) * 100)
+      ? Math.round(
+          ((summary.salary - summary.total_out) / summary.salary) * 100,
+        )
       : null;
 
   const prevSavingsRate =
     prevSummary && prevSummary.salary > 0
-      ? Math.round(((prevSummary.salary - prevSummary.total_out) / prevSummary.salary) * 100)
+      ? Math.round(
+          ((prevSummary.salary - prevSummary.total_out) / prevSummary.salary) *
+            100,
+        )
       : null;
 
   const yoySavingsRate =
     yoySummary && yoySummary.salary > 0
-      ? Math.round(((yoySummary.salary - yoySummary.total_out) / yoySummary.salary) * 100)
+      ? Math.round(
+          ((yoySummary.salary - yoySummary.total_out) / yoySummary.salary) *
+            100,
+        )
       : null;
 
   return (
@@ -579,7 +713,9 @@ export default function Dashboard() {
             className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-1.5 text-sm"
           >
             {MONTHS.map((m, i) => (
-              <option key={m} value={i + 1}>{m}</option>
+              <option key={m} value={i + 1}>
+                {m}
+              </option>
             ))}
           </select>
           <select
@@ -588,7 +724,9 @@ export default function Dashboard() {
             className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-1.5 text-sm"
           >
             {[2023, 2024, 2025, 2026].map((y) => (
-              <option key={y} value={y}>{y}</option>
+              <option key={y} value={y}>
+                {y}
+              </option>
             ))}
           </select>
         </div>
@@ -642,10 +780,10 @@ export default function Dashboard() {
                 savingsRate == null
                   ? "text-slate-400"
                   : savingsRate >= 20
-                  ? "text-violet-400"
-                  : savingsRate >= 0
-                  ? "text-amber-400"
-                  : "text-red-500"
+                    ? "text-violet-400"
+                    : savingsRate >= 0
+                      ? "text-amber-400"
+                      : "text-red-500"
               }
               accentClass="border-l-4 border-l-violet-500"
               sub="of salary unspent"
@@ -683,7 +821,10 @@ export default function Dashboard() {
           {/* ── Recent transactions + Recurring status ── */}
           <div className="grid md:grid-cols-2 gap-5">
             <RecentTransactions transactions={recentTxns} />
-            <RecurringStatus actuals={summary.recurring_actuals} salary={summary.salary} />
+            <RecurringStatus
+              actuals={summary.recurring_actuals}
+              salary={summary.salary}
+            />
           </div>
         </>
       )}
