@@ -19,10 +19,14 @@ def list_salaries(db: Session = Depends(get_db)):
 @router.post("/", response_model=SalaryOut, status_code=201)
 def create_salary(body: SalaryCreate, db: Session = Depends(get_db)):
     # Duplicate check: same date + employer (manual entries have no NI number)
-    existing = db.query(Salary).filter(
-        Salary.date == body.date,
-        Salary.employer == (body.employer or ""),
-    ).first()
+    existing = (
+        db.query(Salary)
+        .filter(
+            Salary.date == body.date,
+            Salary.employer == (body.employer or ""),
+        )
+        .first()
+    )
     if existing:
         raise HTTPException(
             status_code=409,
@@ -51,7 +55,13 @@ async def bulk_upload_payslips(
     results = []
     for file in files:
         if not file.filename or not file.filename.lower().endswith(".pdf"):
-            results.append({"filename": file.filename or "", "status": "error", "detail": "Not a PDF"})
+            results.append(
+                {
+                    "filename": file.filename or "",
+                    "status": "error",
+                    "detail": "Not a PDF",
+                }
+            )
             continue
 
         with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
@@ -61,7 +71,9 @@ async def bulk_upload_payslips(
         try:
             parsed = parse_payslip_pdf(tmp_path)
         except Exception as exc:
-            results.append({"filename": file.filename, "status": "error", "detail": str(exc)})
+            results.append(
+                {"filename": file.filename, "status": "error", "detail": str(exc)}
+            )
             os.unlink(tmp_path)
             continue
         finally:
@@ -71,7 +83,13 @@ async def bulk_upload_payslips(
                 pass
 
         if parsed["date"] is None:
-            results.append({"filename": file.filename, "status": "error", "detail": "Could not extract date"})
+            results.append(
+                {
+                    "filename": file.filename,
+                    "status": "error",
+                    "detail": "Could not extract date",
+                }
+            )
             continue
 
         ni = parsed.get("ni_number") or ""
@@ -81,7 +99,13 @@ async def bulk_upload_payslips(
         else:
             dup_query = dup_query.filter(Salary.employer == parsed["employer"])
         if dup_query.first():
-            results.append({"filename": file.filename, "status": "skipped", "detail": "Already imported"})
+            results.append(
+                {
+                    "filename": file.filename,
+                    "status": "skipped",
+                    "detail": "Already imported",
+                }
+            )
             continue
 
         salary = Salary(
@@ -109,12 +133,24 @@ async def bulk_upload_payslips(
             )
 
         db.commit()
-        results.append({"filename": file.filename, "status": "imported", "date": str(parsed["date"]), "net": parsed["net_pay"]})
+        results.append(
+            {
+                "filename": file.filename,
+                "status": "imported",
+                "date": str(parsed["date"]),
+                "net": parsed["net_pay"],
+            }
+        )
 
     imported = sum(1 for r in results if r["status"] == "imported")
     skipped = sum(1 for r in results if r["status"] == "skipped")
     errors = sum(1 for r in results if r["status"] == "error")
-    return {"results": results, "imported": imported, "skipped": skipped, "errors": errors}
+    return {
+        "results": results,
+        "imported": imported,
+        "skipped": skipped,
+        "errors": errors,
+    }
 
 
 @router.post("/upload-payslip", response_model=SalaryOut, status_code=201)
@@ -135,10 +171,14 @@ async def upload_payslip(file: UploadFile = File(...), db: Session = Depends(get
         try:
             parsed = parse_payslip_pdf(tmp_path)
         except Exception as exc:
-            raise HTTPException(status_code=422, detail=f"Could not parse payslip: {exc}")
+            raise HTTPException(
+                status_code=422, detail=f"Could not parse payslip: {exc}"
+            )
 
         if parsed["date"] is None:
-            raise HTTPException(status_code=422, detail="Could not extract date from payslip")
+            raise HTTPException(
+                status_code=422, detail="Could not extract date from payslip"
+            )
 
         ni = parsed.get("ni_number") or ""
 

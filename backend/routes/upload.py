@@ -5,7 +5,6 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy.orm import Session
-from werkzeug.utils import secure_filename
 
 from database import get_db
 from models import Account, StatementFormat, Transaction
@@ -35,6 +34,7 @@ def _ensure_dirs():
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
+
 def _get_or_create_account(bank: str, account_number: str, db: Session) -> Account:
     acc = db.query(Account).filter_by(account_number=account_number).first()
     if not acc:
@@ -48,12 +48,16 @@ def _persist_transactions(df, account_id: int, source_file: str, db: Session) ->
     added = skipped = 0
     new_txns = []
     for _, row in df.iterrows():
-        exists = db.query(Transaction).filter_by(
-            account_id=account_id,
-            date=row["date"].date(),
-            description=row["description"],
-            amount=round(float(row["amount"]), 2),
-        ).first()
+        exists = (
+            db.query(Transaction)
+            .filter_by(
+                account_id=account_id,
+                date=row["date"].date(),
+                description=row["description"],
+                amount=round(float(row["amount"]), 2),
+            )
+            .first()
+        )
         if exists:
             skipped += 1
             continue
@@ -77,12 +81,17 @@ def _persist_transactions(df, account_id: int, source_file: str, db: Session) ->
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 
+
 @router.get("/formats", response_model=list[StatementFormatOut])
 def list_formats(db: Session = Depends(get_db)):
-    return db.query(StatementFormat).order_by(
-        StatementFormat.is_builtin.desc(),
-        StatementFormat.use_count.desc(),
-    ).all()
+    return (
+        db.query(StatementFormat)
+        .order_by(
+            StatementFormat.is_builtin.desc(),
+            StatementFormat.use_count.desc(),
+        )
+        .all()
+    )
 
 
 @router.post("/preview", response_model=PreviewResponse)
@@ -105,7 +114,9 @@ async def preview_upload(file: UploadFile, db: Session = Depends(get_db)):
 
     try:
         saved_formats = db.query(StatementFormat).all()
-        result = universal.extract_preview(tmp_path, filename=file.filename, saved_formats=saved_formats)
+        result = universal.extract_preview(
+            tmp_path, filename=file.filename, saved_formats=saved_formats
+        )
     except Exception as e:
         os.remove(tmp_path)
         raise HTTPException(status_code=422, detail=str(e))
@@ -140,7 +151,9 @@ def confirm_upload(body: ConfirmUploadRequest, db: Session = Depends(get_db)):
     year = body.year
 
     try:
-        df = universal.parse_with_mapping(tmp_path, mapping_dict, year=year, skip_patterns=body.skip_patterns)
+        df = universal.parse_with_mapping(
+            tmp_path, mapping_dict, year=year, skip_patterns=body.skip_patterns
+        )
     except Exception as e:
         raise HTTPException(status_code=422, detail=str(e))
     finally:
@@ -148,7 +161,9 @@ def confirm_upload(body: ConfirmUploadRequest, db: Session = Depends(get_db)):
             os.remove(tmp_path)
 
     if df.empty:
-        raise HTTPException(status_code=422, detail="No transactions could be parsed from this file")
+        raise HTTPException(
+            status_code=422, detail="No transactions could be parsed from this file"
+        )
 
     # Infer a bank name from the format or account number
     bank_name = "unknown"
@@ -165,12 +180,14 @@ def confirm_upload(body: ConfirmUploadRequest, db: Session = Depends(get_db)):
     if body.save_format and body.format_name:
         existing = db.query(StatementFormat).filter_by(name=body.format_name).first()
         if not existing:
-            db.add(StatementFormat(
-                name=body.format_name,
-                column_headers=body.column_headers,
-                **mapping_dict,
-                is_builtin=False,
-            ))
+            db.add(
+                StatementFormat(
+                    name=body.format_name,
+                    column_headers=body.column_headers,
+                    **mapping_dict,
+                    is_builtin=False,
+                )
+            )
             db.commit()
 
     # Bump use_count on the matched format
@@ -266,27 +283,51 @@ async def bulk_upload(
             with open(tmp_path, "wb") as f:
                 f.write(contents)
 
-            df = universal.parse_with_mapping(tmp_path, mapping_dict, year=parsed_year, skip_patterns=patterns)
+            df = universal.parse_with_mapping(
+                tmp_path, mapping_dict, year=parsed_year, skip_patterns=patterns
+            )
             note = None
 
             if df.empty:
                 # Fallback: auto-detect the mapping for this specific file and retry
                 try:
-                    preview_data = universal.extract_preview(tmp_path, filename=filename, saved_formats=saved_formats)
+                    preview_data = universal.extract_preview(
+                        tmp_path, filename=filename, saved_formats=saved_formats
+                    )
                     auto_mapping = preview_data["proposed_mapping"]
-                    auto_year = preview_data.get("detected_year") if preview_data.get("needs_year") else None
-                    df = universal.parse_with_mapping(tmp_path, auto_mapping, year=auto_year, skip_patterns=patterns)
+                    auto_year = (
+                        preview_data.get("detected_year")
+                        if preview_data.get("needs_year")
+                        else None
+                    )
+                    df = universal.parse_with_mapping(
+                        tmp_path, auto_mapping, year=auto_year, skip_patterns=patterns
+                    )
                     if not df.empty:
-                        note = "Used auto-detected mapping (stored format gave no results)"
+                        note = (
+                            "Used auto-detected mapping (stored format gave no results)"
+                        )
                 except Exception:
                     pass
 
             if df.empty:
-                results.append(BulkFileResult(filename=filename, error="No transactions found — try uploading individually via Single tab"))
+                results.append(
+                    BulkFileResult(
+                        filename=filename,
+                        error="No transactions found — try uploading individually via Single tab",
+                    )
+                )
                 continue
 
             counts = _persist_transactions(df, account.id, token, db)
-            results.append(BulkFileResult(filename=filename, added=counts["added"], skipped=counts["skipped"], note=note))
+            results.append(
+                BulkFileResult(
+                    filename=filename,
+                    added=counts["added"],
+                    skipped=counts["skipped"],
+                    note=note,
+                )
+            )
         except Exception as e:
             results.append(BulkFileResult(filename=filename, error=str(e)))
         finally:

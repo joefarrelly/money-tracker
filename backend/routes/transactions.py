@@ -72,7 +72,9 @@ def get_transaction(txn_id: int, db: Session = Depends(get_db)):
 
 
 @router.patch("/{txn_id}", response_model=TransactionOut)
-def update_transaction(txn_id: int, body: TransactionUpdate, db: Session = Depends(get_db)):
+def update_transaction(
+    txn_id: int, body: TransactionUpdate, db: Session = Depends(get_db)
+):
     t = db.get(Transaction, txn_id)
     if not t:
         raise HTTPException(status_code=404, detail="Transaction not found")

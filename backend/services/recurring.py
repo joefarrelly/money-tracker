@@ -10,7 +10,6 @@ Algorithm:
 
 import re
 from collections import defaultdict
-from datetime import date
 
 from sqlalchemy.orm import Session
 
@@ -56,7 +55,7 @@ def detect_recurring(db: Session, min_occurrences: int = 3) -> list[dict]:
         if mean_amount < 1:
             continue
         variance = sum((a - mean_amount) ** 2 for a in amounts) / len(amounts)
-        std = variance ** 0.5
+        std = variance**0.5
         if std / mean_amount > 0.20:
             continue
 
@@ -100,9 +99,11 @@ def sync_recurring_to_db(db: Session) -> dict:
     created = updated = skipped = 0
 
     for c in candidates:
-        existing = db.query(RecurringExpense).filter_by(
-            merchant_pattern=c["merchant_pattern"]
-        ).first()
+        existing = (
+            db.query(RecurringExpense)
+            .filter_by(merchant_pattern=c["merchant_pattern"])
+            .first()
+        )
 
         if existing:
             if not existing.is_confirmed:
@@ -113,13 +114,15 @@ def sync_recurring_to_db(db: Session) -> dict:
             else:
                 skipped += 1
         else:
-            db.add(RecurringExpense(
-                merchant_pattern=c["merchant_pattern"],
-                typical_amount=c["typical_amount"],
-                frequency=c["frequency"],
-                day_of_month=c["day_of_month"],
-                is_confirmed=False,
-            ))
+            db.add(
+                RecurringExpense(
+                    merchant_pattern=c["merchant_pattern"],
+                    typical_amount=c["typical_amount"],
+                    frequency=c["frequency"],
+                    day_of_month=c["day_of_month"],
+                    is_confirmed=False,
+                )
+            )
             created += 1
 
     db.commit()

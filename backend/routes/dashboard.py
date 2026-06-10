@@ -49,7 +49,9 @@ def list_recurring(db: Session = Depends(get_db)):
 
 
 @router.patch("/recurring/{rec_id}", response_model=RecurringExpenseOut)
-def update_recurring(rec_id: int, body: RecurringExpenseUpdate, db: Session = Depends(get_db)):
+def update_recurring(
+    rec_id: int, body: RecurringExpenseUpdate, db: Session = Depends(get_db)
+):
     r = db.get(RecurringExpense, rec_id)
     if not r:
         raise HTTPException(status_code=404, detail="Recurring expense not found")

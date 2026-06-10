@@ -18,7 +18,8 @@ def _parse_amount(text: str) -> float | None:
     if not text:
         return None
     cleaned = (
-        str(text).strip()
+        str(text)
+        .strip()
         .replace(",", "")
         .replace("£", "")
         .replace("(", "-")
@@ -121,7 +122,9 @@ def parse_payslip_pdf(filepath: str) -> dict:
 
         # NI number: "NI Letter & No: A PB175845B" → "PB175845B"
         # Format: NI letter (category), then NI number (2 letters + 6 digits + 1 letter)
-        ni_match = re.search(r"NI Letter & No:\s*[A-Z]\s+([A-Z]{2}\d{6}[A-Z])", row_text)
+        ni_match = re.search(
+            r"NI Letter & No:\s*[A-Z]\s+([A-Z]{2}\d{6}[A-Z])", row_text
+        )
         if ni_match and not ni_number:
             ni_number = ni_match.group(1)
 
@@ -221,7 +224,9 @@ def parse_payslip_pdf(filepath: str) -> dict:
         )
 
     gross_pay = sum(it["amount"] for it in line_items if it["line_type"] == "earning")
-    total_deductions = sum(it["amount"] for it in line_items if it["line_type"] == "deduction")
+    total_deductions = sum(
+        it["amount"] for it in line_items if it["line_type"] == "deduction"
+    )
 
     return {
         "date": pay_date,
