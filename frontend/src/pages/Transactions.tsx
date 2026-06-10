@@ -1,17 +1,34 @@
 import { useEffect, useState, useCallback } from "react";
-import { getTransactions, patchTransaction, getCategories, getAccounts } from "../api/client";
+import {
+  getTransactions,
+  patchTransaction,
+  getCategories,
+  getAccounts,
+} from "../api/client";
 import { Spinner } from "../components/Spinner";
 import type { Category, PaginatedTransactions, Account } from "../types";
 
 const MONTHS = [
-  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
 ];
 
 function AmountBadge({ amount }: { amount: number }) {
   const positive = amount >= 0;
   return (
-    <span className={`font-mono text-sm ${positive ? "text-green-400" : "text-red-400"}`}>
+    <span
+      className={`font-mono text-sm ${positive ? "text-green-400" : "text-red-400"}`}
+    >
       {positive ? "+" : ""}£{Math.abs(amount).toFixed(2)}
     </span>
   );
@@ -45,9 +62,20 @@ export default function Transactions() {
     getTransactions(params)
       .then(setData)
       .finally(() => setLoading(false));
-  }, [page, search, categoryFilter, accountFilter, yearFilter, monthFilter, amountType, hideTransfers]);
+  }, [
+    page,
+    search,
+    categoryFilter,
+    accountFilter,
+    yearFilter,
+    monthFilter,
+    amountType,
+    hideTransfers,
+  ]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    load();
+  }, [load]);
   useEffect(() => {
     getCategories().then(setCategories);
     getAccounts().then(setAccounts);
@@ -59,8 +87,13 @@ export default function Transactions() {
     const updated = await patchTransaction(id, { category_id });
     setData((prev) =>
       prev
-        ? { ...prev, transactions: prev.transactions.map((t) => (t.id === id ? updated : t)) }
-        : prev
+        ? {
+            ...prev,
+            transactions: prev.transactions.map((t) =>
+              t.id === id ? updated : t,
+            ),
+          }
+        : prev,
     );
   };
 
@@ -75,7 +108,14 @@ export default function Transactions() {
     setPage(1);
   };
 
-  const hasFilters = search || categoryFilter || accountFilter || yearFilter || monthFilter || amountType || hideTransfers;
+  const hasFilters =
+    search ||
+    categoryFilter ||
+    accountFilter ||
+    yearFilter ||
+    monthFilter ||
+    amountType ||
+    hideTransfers;
 
   return (
     <div className="space-y-4">
@@ -86,28 +126,41 @@ export default function Transactions() {
             type="text"
             placeholder="Search descriptions…"
             value={search}
-            onChange={(e) => { setSearch(e.target.value); reset(); }}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              reset();
+            }}
             className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-1.5 text-sm w-56"
           />
           <select
             value={categoryFilter}
-            onChange={(e) => { setCategoryFilter(e.target.value); reset(); }}
+            onChange={(e) => {
+              setCategoryFilter(e.target.value);
+              reset();
+            }}
             className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-1.5 text-sm"
           >
             <option value="">All categories</option>
             <option value="-1">Uncategorised</option>
             {categories.map((c) => (
-              <option key={c.id} value={c.id}>{c.name}</option>
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
             ))}
           </select>
           <select
             value={accountFilter}
-            onChange={(e) => { setAccountFilter(e.target.value); reset(); }}
+            onChange={(e) => {
+              setAccountFilter(e.target.value);
+              reset();
+            }}
             className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-1.5 text-sm"
           >
             <option value="">All accounts</option>
             {accounts.map((a) => (
-              <option key={a.id} value={a.id}>{a.nickname ?? a.account_number}</option>
+              <option key={a.id} value={a.id}>
+                {a.nickname ?? a.account_number}
+              </option>
             ))}
           </select>
         </div>
@@ -115,23 +168,33 @@ export default function Transactions() {
         <div className="flex gap-3 flex-wrap items-center">
           <select
             value={yearFilter}
-            onChange={(e) => { setYearFilter(e.target.value); reset(); }}
+            onChange={(e) => {
+              setYearFilter(e.target.value);
+              reset();
+            }}
             className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-1.5 text-sm"
           >
             <option value="">All years</option>
             {[2023, 2024, 2025, 2026].map((y) => (
-              <option key={y} value={y}>{y}</option>
+              <option key={y} value={y}>
+                {y}
+              </option>
             ))}
           </select>
           <select
             value={monthFilter}
-            onChange={(e) => { setMonthFilter(e.target.value); reset(); }}
+            onChange={(e) => {
+              setMonthFilter(e.target.value);
+              reset();
+            }}
             className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-1.5 text-sm"
             disabled={!yearFilter}
           >
             <option value="">All months</option>
             {MONTHS.map((m, i) => (
-              <option key={i} value={i + 1}>{m}</option>
+              <option key={i} value={i + 1}>
+                {m}
+              </option>
             ))}
           </select>
 
@@ -139,7 +202,10 @@ export default function Transactions() {
             {(["", "in", "out"] as const).map((t) => (
               <button
                 key={t}
-                onClick={() => { setAmountType(t); reset(); }}
+                onClick={() => {
+                  setAmountType(t);
+                  reset();
+                }}
                 className={`px-3 py-1.5 transition-colors ${
                   amountType === t
                     ? "bg-indigo-600 text-white"
@@ -155,7 +221,10 @@ export default function Transactions() {
             <input
               type="checkbox"
               checked={hideTransfers}
-              onChange={(e) => { setHideTransfers(e.target.checked); reset(); }}
+              onChange={(e) => {
+                setHideTransfers(e.target.checked);
+                reset();
+              }}
               className="rounded"
             />
             Hide transfers
@@ -205,7 +274,10 @@ export default function Transactions() {
                   <td className="px-4 py-2.5 text-slate-400 whitespace-nowrap">
                     {new Date(t.date).toLocaleDateString("en-GB")}
                   </td>
-                  <td className="px-4 py-2.5 max-w-xs truncate" title={t.description}>
+                  <td
+                    className="px-4 py-2.5 max-w-xs truncate"
+                    title={t.description}
+                  >
                     {t.description}
                     {t.is_transfer && (
                       <span className="ml-2 text-xs text-slate-600 bg-slate-800 px-1.5 py-0.5 rounded">
@@ -223,13 +295,18 @@ export default function Transactions() {
                     <select
                       value={t.category_id ?? ""}
                       onChange={(e) =>
-                        updateCategory(t.id, e.target.value ? Number(e.target.value) : null)
+                        updateCategory(
+                          t.id,
+                          e.target.value ? Number(e.target.value) : null,
+                        )
                       }
                       className="bg-slate-800 border border-slate-700 rounded px-2 py-1 text-xs"
                     >
                       <option value="">Uncategorised</option>
                       {categories.map((c) => (
-                        <option key={c.id} value={c.id}>{c.name}</option>
+                        <option key={c.id} value={c.id}>
+                          {c.name}
+                        </option>
                       ))}
                     </select>
                   </td>
@@ -238,7 +315,9 @@ export default function Transactions() {
             </tbody>
           </table>
           {data?.transactions.length === 0 && (
-            <p className="px-4 py-8 text-slate-500 text-sm text-center">No transactions match your filters.</p>
+            <p className="px-4 py-8 text-slate-500 text-sm text-center">
+              No transactions match your filters.
+            </p>
           )}
         </div>
       )}

@@ -34,7 +34,7 @@ def list_transactions(
         q = q.filter(Transaction.account_id == account_id)
     if category_id is not None:
         if category_id == -1:
-            q = q.filter(Transaction.category_id == None)
+            q = q.filter(Transaction.category_id.is_(None))
         else:
             q = q.filter(Transaction.category_id == category_id)
     if year is not None:
@@ -48,7 +48,7 @@ def list_transactions(
     elif amount_type == "out":
         q = q.filter(Transaction.amount < 0)
     if hide_transfers:
-        q = q.filter(Transaction.is_transfer == False)
+        q = q.filter(Transaction.is_transfer.is_(False))
 
     total = q.count()
     pages = max(1, (total + per_page - 1) // per_page)

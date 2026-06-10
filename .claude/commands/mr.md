@@ -29,9 +29,15 @@ Create a branch from dev, commit all pending changes, push, and open a PR target
 
 8. **Re-stage** — run `git add -A` to pick up any doc changes from steps 6–7.
 
-9. **Run ruff checks** — run `docker compose exec web ruff check .` and `docker compose exec web ruff format --check .` from the project root. If either fails, auto-fix with `docker compose exec web ruff check . --fix` and `docker compose exec web ruff format .`, then re-stage with `git add -A` before committing. If Docker is not running, skip this step and note it in the response.
+9. **Run backend lint** — run `docker compose exec web ruff check .` and `docker compose exec web ruff format --check .` from the project root. If either fails, auto-fix with `docker compose exec web ruff check . --fix` and `docker compose exec web ruff format .`, then re-stage with `git add -A` before committing. If Docker is not running, skip this step and note it in the response.
 
-10. **Commit** — write a concise commit message that summarises the work (imperative mood, present tense, under 72 chars). Use a heredoc to pass the message:
+10. **Run frontend lint** — if a `frontend/` directory exists, run from the project root:
+    ```
+    cd frontend && npm run lint && npm run format:check
+    ```
+    If lint fails, auto-fix with `npm run format` then re-stage. If `node_modules` is missing, run `npm install` first. Skip if no `frontend/` directory exists.
+
+11. **Commit** — write a concise commit message that summarises the work (imperative mood, present tense, under 72 chars). Use a heredoc to pass the message:
     ```
     git commit -m "$(cat <<'EOF'
     <message>
@@ -39,16 +45,15 @@ Create a branch from dev, commit all pending changes, push, and open a PR target
     )"
     ```
 
-11. **Push** — run `git push -u origin <branch-name>`.
+12. **Push** — run `git push -u origin <branch-name>`.
 
-12. **Create the PR** — use the `mcp__github__create_pull_request` tool with:
-    - `owner` and `repo` derived from `git remote get-url origin`
-    - `head`: the new branch name
-    - `base`: `dev` (fall back to `main` if `dev` does not exist on the remote — check with `git branch -r | grep dev`)
-    - `title`: always `"Merge <branch-name> into dev"` (e.g., `"Merge fix-auth-redirect into dev"`)
-    - `body`: omit (leave empty — commit messages carry all the context)
+13. **Create the PR** — run:
+    ```
+    gh pr create --title "Merge <branch-name> into dev" --base dev --head <branch-name> --body ""
+    ```
+    Fall back to `--base main` if dev doesn't exist remotely.
 
-13. **Report** — print the PR URL so the user can see it.
+14. **Report** — print the PR URL so the user can see it.
 
 ## Notes
 

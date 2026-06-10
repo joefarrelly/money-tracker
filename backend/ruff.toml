@@ -1,0 +1,3 @@
+[lint.per-file-ignores]
+"app.py" = ["E402"]
+"parsers/universal.py" = ["E402"]

@@ -1,5 +1,10 @@
 import { useEffect, useState } from "react";
-import { getRecurring, syncRecurring, patchRecurring, getCategories } from "../api/client";
+import {
+  getRecurring,
+  syncRecurring,
+  patchRecurring,
+  getCategories,
+} from "../api/client";
 import type { RecurringExpense, Category } from "../types";
 import { Spinner } from "../components/Spinner";
 
@@ -11,10 +16,12 @@ export default function Recurring() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    Promise.all([getRecurring(), getCategories()]).then(([r, c]) => {
-      setItems(r);
-      setCategories(c);
-    }).finally(() => setLoading(false));
+    Promise.all([getRecurring(), getCategories()])
+      .then(([r, c]) => {
+        setItems(r);
+        setCategories(c);
+      })
+      .finally(() => setLoading(false));
   }, []);
 
   const handleSync = async () => {
@@ -22,7 +29,9 @@ export default function Recurring() {
     setSyncResult(null);
     try {
       const r = await syncRecurring();
-      setSyncResult(`Created ${r.created}, updated ${r.updated}, skipped ${r.skipped}`);
+      setSyncResult(
+        `Created ${r.created}, updated ${r.updated}, skipped ${r.skipped}`,
+      );
       getRecurring().then(setItems);
     } finally {
       setSyncing(false);
@@ -54,7 +63,10 @@ export default function Recurring() {
         <div>
           <h1 className="text-lg font-semibold">Recurring expenses</h1>
           <p className="text-sm text-slate-400 mt-0.5">
-            Monthly total: <span className="text-red-400 font-medium">£{monthlyTotal.toFixed(2)}</span>
+            Monthly total:{" "}
+            <span className="text-red-400 font-medium">
+              £{monthlyTotal.toFixed(2)}
+            </span>
           </p>
         </div>
         <div className="flex flex-col items-end gap-1">
@@ -84,22 +96,38 @@ export default function Recurring() {
           </thead>
           <tbody>
             {items.map((r) => (
-              <tr key={r.id} className="border-b border-slate-800/50 hover:bg-slate-800/40">
-                <td className="px-4 py-3 font-mono text-xs">{r.merchant_pattern}</td>
-                <td className="px-4 py-3 text-red-400">£{r.typical_amount.toFixed(2)}</td>
-                <td className="px-4 py-3 capitalize text-slate-400">{r.frequency}</td>
-                <td className="px-4 py-3 text-red-400">£{r.monthly_cost.toFixed(2)}</td>
+              <tr
+                key={r.id}
+                className="border-b border-slate-800/50 hover:bg-slate-800/40"
+              >
+                <td className="px-4 py-3 font-mono text-xs">
+                  {r.merchant_pattern}
+                </td>
+                <td className="px-4 py-3 text-red-400">
+                  £{r.typical_amount.toFixed(2)}
+                </td>
+                <td className="px-4 py-3 capitalize text-slate-400">
+                  {r.frequency}
+                </td>
+                <td className="px-4 py-3 text-red-400">
+                  £{r.monthly_cost.toFixed(2)}
+                </td>
                 <td className="px-4 py-3">
                   <select
                     value={r.category_id ?? ""}
                     onChange={(e) =>
-                      updateCategory(r.id, e.target.value ? Number(e.target.value) : null)
+                      updateCategory(
+                        r.id,
+                        e.target.value ? Number(e.target.value) : null,
+                      )
                     }
                     className="bg-slate-800 border border-slate-700 rounded px-2 py-1 text-xs"
                   >
                     <option value="">—</option>
                     {categories.map((c) => (
-                      <option key={c.id} value={c.id}>{c.name}</option>
+                      <option key={c.id} value={c.id}>
+                        {c.name}
+                      </option>
                     ))}
                   </select>
                 </td>
@@ -138,7 +166,8 @@ export default function Recurring() {
         </table>
         {items.length === 0 && (
           <p className="px-4 py-6 text-slate-500 text-sm text-center">
-            No recurring expenses yet. Upload statements then click "Auto-detect".
+            No recurring expenses yet. Upload statements then click
+            "Auto-detect".
           </p>
         )}
       </div>
