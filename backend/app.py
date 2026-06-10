@@ -2,6 +2,7 @@ import asyncio
 import logging
 import os
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from dotenv import load_dotenv
 
@@ -9,6 +10,8 @@ load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 from database import SessionLocal, init_db
 from routes.accounts import router as accounts_router
@@ -74,6 +77,17 @@ app.include_router(settings_router, prefix="/api/settings", tags=["settings"])
 app.include_router(dashboard_router, prefix="/api/dashboard", tags=["dashboard"])
 app.include_router(transfers_router, prefix="/api/transfers", tags=["transfers"])
 app.include_router(email_imports_router, prefix="/api/email-imports", tags=["email-imports"])
+
+_STATIC_DIR = Path(__file__).parent / "static_frontend"
+if _STATIC_DIR.exists():
+    app.mount("/assets", StaticFiles(directory=_STATIC_DIR / "assets"), name="assets")
+
+    @app.get("/{full_path:path}")
+    async def serve_spa(full_path: str):
+        file_path = _STATIC_DIR / full_path
+        if file_path.is_file():
+            return FileResponse(file_path)
+        return FileResponse(_STATIC_DIR / "index.html")
 
 
 if __name__ == "__main__":
