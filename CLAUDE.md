@@ -14,7 +14,15 @@ Personal finance tracker that consolidates:
 
 ## Running Locally
 
-**Backend** (from `backend/`):
+**With Docker (recommended):**
+```bash
+docker compose up --build
+```
+Runs on `http://localhost:5004`. Builds the React frontend and serves it from FastAPI.
+
+**Without Docker:**
+
+Backend (from `backend/`):
 ```bash
 python -m venv .venv
 .venv\Scripts\activate
@@ -23,7 +31,7 @@ python app.py
 ```
 Runs on `http://localhost:8000`. Interactive API docs at `http://localhost:8000/docs`.
 
-**Frontend** (from `frontend/`):
+Frontend (from `frontend/`):
 ```bash
 npm install
 npm run dev
@@ -39,19 +47,19 @@ backend/
   models.py         # SQLAlchemy models (DeclarativeBase)
   schemas.py        # Pydantic request/response models
   database.py       # Engine, SessionLocal, get_db dependency, DB init + seeding
-  routes/           # APIRouters: accounts, transactions, upload, salaries, categories, dashboard, settings, transfers
+  routes/           # APIRouters: accounts, transactions, upload, salaries, categories, dashboard, settings, transfers, email_imports
   parsers/
     universal.py    # Universal PDF parser: table extraction, column-role heuristics,
                     #   format matching, preview + confirm flow (replaces barclays.py/chase.py)
     payslip.py      # Payslip PDF parser: handles 3 table layouts, extracts line items + NI number
   services/         # recurring.py (auto-detection), summary.py (monthly summary + disposable income),
-                    #   transfers.py (transfer candidate detection)
+                    #   transfers.py (transfer candidate detection), email_poller.py (Gmail IMAP polling)
 ```
 
 ### Frontend structure
 ```
 frontend/src/
-  pages/            # Dashboard, Transactions, Upload, Recurring, Salaries, Settings, Transfers
+  pages/            # Dashboard, Transactions, Upload, Recurring, Salaries, Settings, Transfers, EmailImports
   components/       # Shared components: Spinner
   api/client.ts     # fetch wrapper with 60s GET cache + auto-invalidate on mutations
   types/index.ts    # Shared TypeScript types
@@ -121,6 +129,18 @@ Currency values are formatted to 2 decimal places throughout the frontend (`toLo
 - **This month** — found/pending/over status per item
 - **By category** — monthly cost grouped by category with % of salary bars
 
+## Email Imports
+`services/email_poller.py` polls Gmail via IMAP every 5 minutes (configurable via `EMAIL_POLL_INTERVAL`). Credentials read from env: `GMAIL_ADDRESS`, `GMAIL_APP_PASSWORD`. Attachments (PDFs) are saved to `backend/uploads/email/` and parsed as bank statements or payslips.
+
+`EmailImport` model tracks each polled message: `message_id`, `subject`, `sender`, `received_at`, `filename`, `import_type` (statement/payslip), `status` (pending/imported/error), `error_message`, `raw_data`.
+
+`routes/email_imports.py` exposes:
+- `GET /api/email-imports/` — list all import records
+- `POST /api/email-imports/retry/{id}` — retry a failed import
+- `DELETE /api/email-imports/{id}` — delete an import record
+
+The poller runs as a background asyncio task started in the FastAPI lifespan hook.
+
 ## Transfer Detection
 `services/transfers.py` scans all unreviewed transactions for candidate account-to-account transfers: negative on one account paired with a positive of the same amount (±£0.02) on a different account within ±2 days. Confidence score: 1.0 for same-day exact match, reduced by 0.15/day and proportional amount delta.
 
@@ -132,3 +152,17 @@ Currency values are formatted to 2 decimal places throughout the frontend (`toLo
 - `GET /api/transfers/confirmed` — confirmed pairs, deduplicated, normalised so `txn_out` is always the negative side
 
 Transaction model has three new fields: `is_transfer`, `transfer_counterpart_id`, `transfer_ignored`. Added via `_migrate()` in `database.py`.
+
+## Linting
+**Backend:** `ruff` (lint + format). Config in `ruff.toml` at repo root. Per-file E402 ignores for `backend/app.py` and `backend/parsers/universal.py` (intentional `load_dotenv`/`pd.set_option` before imports).
+```bash
+uvx ruff check backend
+uvx ruff format --check backend
+```
+
+**Frontend:** `oxlint` + `prettier`. Scripts in `frontend/package.json`.
+```bash
+cd frontend && npm run lint && npm run format:check
+```
+
+CI runs both on every PR via `.github/workflows/lint.yml`.
