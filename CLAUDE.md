@@ -1,5 +1,7 @@
 # Money Tracker — Claude Instructions
 
+Live at [montrack.fazz.uk](https://montrack.fazz.uk).
+
 ## Project Overview
 Personal finance tracker that consolidates:
 - Bank statement PDF uploads (Barclays, Chase)
