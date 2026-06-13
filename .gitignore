@@ -1,27 +1,8 @@
-# Python
 __pycache__/
 *.py[cod]
-*.pyo
-*.pyd
-.Python
-backend/venv/
-backend/.venv/
-backend/uploads/
-backend/*.db
-backend/instance/
-
-# Node
-frontend/node_modules/
-frontend/dist/
-frontend/.env
-
-# Env
 .env
-*.env
-
-# OS
+.env.*
+*.egg-info/
+dist/
+build/
 .DS_Store
-Thumbs.db
-.claude/*
-!.claude/commands/
-!.claude/commands/**
