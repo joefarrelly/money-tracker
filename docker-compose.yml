@@ -21,6 +21,7 @@ services:
       POSTGRES_PASSWORD: money_tracker
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./docker/init.sql:/docker-entrypoint-initdb.d/init.sql
     ports:
       - "5433:5432"
     healthcheck:
