@@ -7,7 +7,10 @@ DATABASE_URL = os.environ.get(
     "DATABASE_URL", f"sqlite:///{os.path.join(BASE_DIR, 'money_tracker.db')}"
 )
 
-engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+_connect_args = (
+    {"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}
+)
+engine = create_engine(DATABASE_URL, connect_args=_connect_args)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 
@@ -34,21 +37,21 @@ def init_db():
 
 def _migrate():
     """Add columns that exist in the model but are missing from the live DB."""
-    from sqlalchemy import text
+    from sqlalchemy import inspect as sa_inspect, text
 
     migrations = [
         ("statement_formats", "date_description_col", "INTEGER"),
         ("salaries", "source_file", "VARCHAR(255)"),
         ("salaries", "ni_number", "VARCHAR(20)"),
-        ("transactions", "is_transfer", "BOOLEAN DEFAULT 0"),
+        ("transactions", "is_transfer", "BOOLEAN DEFAULT FALSE"),
         ("transactions", "transfer_counterpart_id", "INTEGER"),
-        ("transactions", "transfer_ignored", "BOOLEAN DEFAULT 0"),
-        ("email_imports", "imported_at", "DATETIME"),
+        ("transactions", "transfer_ignored", "BOOLEAN DEFAULT FALSE"),
+        ("email_imports", "imported_at", "TIMESTAMP"),
     ]
+    inspector = sa_inspect(engine)
     with engine.connect() as conn:
         for table, column, col_type in migrations:
-            rows = conn.execute(text(f"PRAGMA table_info({table})")).fetchall()
-            existing = {r[1] for r in rows}
+            existing = {col["name"] for col in inspector.get_columns(table)}
             if column not in existing:
                 conn.execute(
                     text(f"ALTER TABLE {table} ADD COLUMN {column} {col_type}")

@@ -11,7 +11,7 @@ Personal finance tracker that consolidates:
 - Transfer detection to exclude internal movements from totals
 
 ## Stack
-- **Backend:** FastAPI + SQLAlchemy + SQLite (`backend/money_tracker.db`)
+- **Backend:** FastAPI + SQLAlchemy + PostgreSQL
 - **Frontend:** React + TypeScript + Vite + Tailwind CSS
 
 ## Running Locally
@@ -98,7 +98,7 @@ The universal parser (`parsers/universal.py`) handles all banks. It scores table
 The original bank-specific parsing logic is in `C:/Users/Joe/Desktop/App/personal/ScrapeBanks/bank_app.py` (`process_barclays_pdf`, `process_chase_pdf`) — kept as reference but no longer used directly.
 
 ## StatementFormats
-Built-in formats for Barclays and Chase are seeded on startup. User-defined formats are saved when "Save this format" is checked on confirm. `use_count` is bumped on each successful import. Schema migrations for new columns use `_migrate()` in `database.py` (PRAGMA table_info + ALTER TABLE — no Alembic).
+Built-in formats for Barclays and Chase are seeded on startup. User-defined formats are saved when "Save this format" is checked on confirm. `use_count` is bumped on each successful import. Schema migrations for new columns use `_migrate()` in `database.py` (SQLAlchemy `inspect` + ALTER TABLE — no Alembic).
 
 ## Payslip Parsing
 `parsers/payslip.py` handles NordHealth / Provet Cloud payslips using camelot stream flavor (no Ghostscript needed). Handles 3 PDF layouts that this payroll system produces:

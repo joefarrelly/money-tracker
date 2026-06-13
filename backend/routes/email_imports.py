@@ -1,5 +1,5 @@
 import os
-from datetime import datetime
+from datetime import date, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -122,7 +122,7 @@ def _confirm_payslip(record: EmailImport, db: Session):
     d = record.raw_data
     ni = d.get("ni_number") or None
 
-    dup_q = db.query(Salary).filter(Salary.date == d["date"])
+    dup_q = db.query(Salary).filter(Salary.date == date.fromisoformat(d["date"]))
     if ni:
         dup_q = dup_q.filter(Salary.ni_number == ni)
     else:
@@ -134,7 +134,7 @@ def _confirm_payslip(record: EmailImport, db: Session):
         )
 
     salary = Salary(
-        date=d["date"],
+        date=date.fromisoformat(d["date"]),
         employer=d.get("employer"),
         ni_number=ni,
         net_amount=d["net_pay"],
@@ -175,7 +175,7 @@ def _confirm_bank_statement(record: EmailImport, db: Session):
             db.query(Transaction)
             .filter_by(
                 account_id=acc.id,
-                date=txn["date"],
+                date=date.fromisoformat(txn["date"]),
                 description=txn["description"],
                 amount=txn["amount"],
             )
@@ -185,7 +185,7 @@ def _confirm_bank_statement(record: EmailImport, db: Session):
             db.add(
                 Transaction(
                     account_id=acc.id,
-                    date=txn["date"],
+                    date=date.fromisoformat(txn["date"]),
                     description=txn["description"],
                     amount=txn["amount"],
                     balance=txn.get("balance"),
