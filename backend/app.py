@@ -37,11 +37,22 @@ async def _poll_loop():
         try:
             db = SessionLocal()
             try:
+                from models import UserEmailConfig
                 from services.email_poller import poll_emails
 
-                count = await asyncio.to_thread(poll_emails, db)
-                if count:
-                    logger.info("Email poller: %d new import(s)", count)
+                configs = db.query(UserEmailConfig).filter_by(enabled=True).all()
+                for cfg in configs:
+                    count = await asyncio.to_thread(
+                        poll_emails,
+                        db,
+                        cfg.user_email,
+                        cfg.app_password,
+                        cfg.label or "INBOX",
+                    )
+                    if count:
+                        logger.info(
+                            "Email poller (%s): %d new import(s)", cfg.user_email, count
+                        )
             finally:
                 db.close()
         except Exception as exc:

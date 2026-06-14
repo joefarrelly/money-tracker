@@ -329,6 +329,32 @@ export const detectAccount = (file: File) => {
   });
 };
 
+// Email config
+export type EmailConfig = {
+  configured: boolean;
+  user_email?: string;
+  label: string;
+  enabled: boolean;
+};
+
+export const getEmailConfig = () =>
+  request<EmailConfig>("/settings/email-config");
+
+export const setEmailConfig = (data: {
+  app_password: string;
+  label: string;
+  enabled: boolean;
+}) =>
+  request<EmailConfig>("/settings/email-config", {
+    method: "PUT",
+    body: JSON.stringify(data),
+  });
+
+export const deleteEmailConfig = () =>
+  request<{ configured: false }>("/settings/email-config", {
+    method: "DELETE",
+  });
+
 // Email imports
 export const getEmailImports = (status?: string) =>
   request<import("../types").EmailImport[]>(

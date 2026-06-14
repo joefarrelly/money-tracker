@@ -133,6 +133,10 @@ NI number extracted from "NI Letter & No: A PB175845B" — strips the leading ca
 `GET/PUT /api/settings/ni-numbers` — lists all NI numbers seen in payslips, create/update display name.
 Accounts already have nickname support via `PATCH /api/accounts/{id}`.
 
+`GET /api/settings/email-config` — returns the current user's email polling config (`configured`, `user_email`, `label`, `enabled`). App password is never returned.
+`PUT /api/settings/email-config` — save or update config (`app_password`, `label`, `enabled`). Keyed by the authenticated user's Google SSO email.
+`DELETE /api/settings/email-config` — remove config, disabling polling for that user.
+
 ## Dashboard Summary API
 `GET /api/dashboard/summary?year=Y&month=M` returns an enriched `MonthlySummary`:
 - `recurring_actuals` — for each active recurring expense, matches transactions in the month by merchant pattern substring, computes `actual_amount`, `found_this_month`, `is_over` (>15% above monthly cost), and `category_name`/`category_color`/`category_id`
@@ -153,16 +157,20 @@ Currency values are formatted to 2 decimal places throughout the frontend (`toLo
 - **By category** — monthly cost grouped by category with % of salary bars
 
 ## Email Imports
-`services/email_poller.py` polls Gmail via IMAP every 5 minutes (configurable via `EMAIL_POLL_INTERVAL`). Credentials read from env: `GMAIL_ADDRESS`, `GMAIL_APP_PASSWORD`. Attachments (PDFs) are saved to `backend/uploads/email/` and parsed as bank statements or payslips.
+`services/email_poller.py` polls Gmail via IMAP every 5 minutes (configurable via `EMAIL_POLL_INTERVAL`). Credentials are stored per-user in the `UserEmailConfig` DB table (not env vars) — `poll_emails(db, address, password, label)` takes them explicitly. The background `_poll_loop` in `app.py` queries all enabled `UserEmailConfig` rows and polls each one. Attachments (PDFs) are saved to `backend/uploads/email/` and parsed as bank statements or payslips.
+
+`UserEmailConfig` model: `user_email` (PK = Google SSO email), `app_password`, `label` (default INBOX), `enabled`. Managed via `GET/PUT/DELETE /api/settings/email-config`.
 
 `EmailImport` model tracks each polled message: `message_id`, `subject`, `sender`, `received_at`, `filename`, `import_type` (statement/payslip), `status` (pending/imported/error), `error_message`, `raw_data`.
 
 `routes/email_imports.py` exposes:
 - `GET /api/email-imports/` — list all import records
-- `POST /api/email-imports/retry/{id}` — retry a failed import
-- `DELETE /api/email-imports/{id}` — delete an import record
+- `POST /api/email-imports/poll` — manually trigger a poll for the current user (400 if no config)
+- `POST /api/email-imports/{id}/confirm` — persist parsed data
+- `POST /api/email-imports/{id}/skip` — mark as skipped
+- `DELETE /api/email-imports/{id}` — soft-delete (dismissed)
 
-The poller runs as a background asyncio task started in the FastAPI lifespan hook.
+**Email Imports UI:** if no config is saved, shows a setup screen with an App Password form and instructions. Once configured, shows import list with an "Email settings" toggle at the bottom to update or remove config.
 
 ## Transfer Detection
 `services/transfers.py` scans all unreviewed transactions for candidate account-to-account transfers: negative on one account paired with a positive of the same amount (±£0.02) on a different account within ±2 days. Confidence score: 1.0 for same-day exact match, reduced by 0.15/day and proportional amount delta.
