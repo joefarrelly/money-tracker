@@ -12,6 +12,7 @@ python-dateutil==2.9.0
 werkzeug==3.0.3
 python-dotenv==1.0.1
 psycopg2-binary==2.9.12
+alembic==1.14.1
 ruff==0.15.16
 python-jose[cryptography]==3.3.0
 httpx==0.28.1
