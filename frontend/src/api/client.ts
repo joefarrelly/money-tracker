@@ -12,6 +12,16 @@ export function invalidateCache() {
   cache.clear();
 }
 
+function authHeaders(): Record<string, string> {
+  const token = localStorage.getItem("auth_token");
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
+function handleUnauthorized() {
+  localStorage.removeItem("auth_token");
+  window.location.href = "/";
+}
+
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const isGet = !options?.method || options.method.toUpperCase() === "GET";
   const key = `${BASE}${path}`;
@@ -24,9 +34,17 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
   }
 
   const res = await fetch(key, {
-    headers: { "Content-Type": "application/json", ...options?.headers },
+    headers: {
+      "Content-Type": "application/json",
+      ...authHeaders(),
+      ...options?.headers,
+    },
     ...options,
   });
+  if (res.status === 401) {
+    handleUnauthorized();
+    throw new Error("Unauthorized");
+  }
   if (res.status === 204) return undefined as T;
   const text = await res.text();
   if (!res.ok) {
@@ -94,6 +112,7 @@ export const bulkUploadPayslips = (files: File[]) => {
   files.forEach((f) => fd.append("files", f));
   return fetch(`${BASE}/salaries/bulk-upload-payslips`, {
     method: "POST",
+    headers: authHeaders(),
     body: fd,
   }).then(async (r) => {
     const text = await r.text();
@@ -128,6 +147,7 @@ export const uploadPayslip = (file: File) => {
   fd.append("file", file);
   return fetch(`${BASE}/salaries/upload-payslip`, {
     method: "POST",
+    headers: authHeaders(),
     body: fd,
   }).then(async (r) => {
     const text = await r.text();
@@ -244,7 +264,11 @@ export const getIdentities = () =>
 
 // Upload
 export const uploadStatement = (formData: FormData) =>
-  fetch(`${BASE}/upload/`, { method: "POST", body: formData }).then((r) => {
+  fetch(`${BASE}/upload/`, {
+    method: "POST",
+    headers: authHeaders(),
+    body: formData,
+  }).then((r) => {
     if (!r.ok) return r.json().then((e) => Promise.reject(new Error(e.error)));
     return r.json();
   });
@@ -252,30 +276,32 @@ export const uploadStatement = (formData: FormData) =>
 export const previewUpload = (file: File) => {
   const fd = new FormData();
   fd.append("file", file);
-  return fetch(`${BASE}/upload/preview`, { method: "POST", body: fd }).then(
-    async (r) => {
-      const text = await r.text();
-      if (!r.ok) {
-        try {
-          const e = JSON.parse(text);
-          return Promise.reject(
-            new Error(e.detail ?? e.error ?? `HTTP ${r.status}`),
-          );
-        } catch {
-          return Promise.reject(
-            new Error(`Server error (${r.status}): ${text.slice(0, 120)}`),
-          );
-        }
-      }
+  return fetch(`${BASE}/upload/preview`, {
+    method: "POST",
+    headers: authHeaders(),
+    body: fd,
+  }).then(async (r) => {
+    const text = await r.text();
+    if (!r.ok) {
       try {
-        return JSON.parse(text) as import("../types").PreviewResponse;
+        const e = JSON.parse(text);
+        return Promise.reject(
+          new Error(e.detail ?? e.error ?? `HTTP ${r.status}`),
+        );
       } catch {
         return Promise.reject(
-          new Error(`Unexpected response from server: ${text.slice(0, 120)}`),
+          new Error(`Server error (${r.status}): ${text.slice(0, 120)}`),
         );
       }
-    },
-  );
+    }
+    try {
+      return JSON.parse(text) as import("../types").PreviewResponse;
+    } catch {
+      return Promise.reject(
+        new Error(`Unexpected response from server: ${text.slice(0, 120)}`),
+      );
+    }
+  });
 };
 
 export const confirmUpload = (body: object) =>
@@ -294,6 +320,7 @@ export const detectAccount = (file: File) => {
   fd.append("file", file);
   return fetch(`${BASE}/upload/detect-account`, {
     method: "POST",
+    headers: authHeaders(),
     body: fd,
   }).then(async (r) => {
     const text = await r.text();
@@ -339,23 +366,25 @@ export const bulkUpload = (
   fd.append("account_number", accountNumber);
   fd.append("skip_patterns", skipPatterns);
   if (year != null) fd.append("year", String(year));
-  return fetch(`${BASE}/upload/bulk`, { method: "POST", body: fd }).then(
-    async (r) => {
-      const text = await r.text();
-      if (!r.ok) {
-        try {
-          const e = JSON.parse(text);
-          return Promise.reject(
-            new Error(e.detail ?? e.error ?? `HTTP ${r.status}`),
-          );
-        } catch {
-          return Promise.reject(
-            new Error(`Server error (${r.status}): ${text.slice(0, 120)}`),
-          );
-        }
+  return fetch(`${BASE}/upload/bulk`, {
+    method: "POST",
+    headers: authHeaders(),
+    body: fd,
+  }).then(async (r) => {
+    const text = await r.text();
+    if (!r.ok) {
+      try {
+        const e = JSON.parse(text);
+        return Promise.reject(
+          new Error(e.detail ?? e.error ?? `HTTP ${r.status}`),
+        );
+      } catch {
+        return Promise.reject(
+          new Error(`Server error (${r.status}): ${text.slice(0, 120)}`),
+        );
       }
-      cache.clear();
-      return JSON.parse(text) as import("../types").BulkUploadResult;
-    },
-  );
+    }
+    cache.clear();
+    return JSON.parse(text) as import("../types").BulkUploadResult;
+  });
 };
