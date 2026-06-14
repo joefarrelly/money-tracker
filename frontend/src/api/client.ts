@@ -107,9 +107,10 @@ export const createSalary = (data: object) =>
 export const deleteSalary = (id: number) =>
   request<void>(`/salaries/${id}`, { method: "DELETE" });
 
-export const bulkUploadPayslips = (files: File[]) => {
+export const bulkUploadPayslips = (files: File[], templateId: number) => {
   const fd = new FormData();
   files.forEach((f) => fd.append("files", f));
+  fd.append("template_id", String(templateId));
   return fetch(`${BASE}/salaries/bulk-upload-payslips`, {
     method: "POST",
     headers: authHeaders(),
@@ -142,10 +143,10 @@ export const bulkUploadPayslips = (files: File[]) => {
   });
 };
 
-export const uploadPayslip = (file: File, templateId?: number) => {
+export const uploadPayslip = (file: File, templateId: number) => {
   const fd = new FormData();
   fd.append("file", file);
-  if (templateId != null) fd.append("template_id", String(templateId));
+  fd.append("template_id", String(templateId));
   return fetch(`${BASE}/salaries/upload-payslip`, {
     method: "POST",
     headers: authHeaders(),

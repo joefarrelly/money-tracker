@@ -404,12 +404,12 @@ def extract_all_tables(file_path: str, file_type: str = "pdf") -> list[dict]:
     if file_type == "csv":
         df = pd.read_csv(file_path)
         headers = [str(c) for c in df.columns]
-        sample = df.head(10).fillna("").astype(str).values.tolist()
+        rows = df.fillna("").astype(str).values.tolist()
         return [
             {
                 "index": 0,
                 "headers": headers,
-                "sample_rows": sample,
+                "sample_rows": rows,
                 "total_rows": len(df),
             }
         ]
@@ -426,17 +426,17 @@ def extract_all_tables(file_path: str, file_type: str = "pdf") -> list[dict]:
             headers = [f"Col {j}" for j in range(len(df.columns))]
             data_df = df.reset_index(drop=True)
 
-        sample = []
-        for _, row in data_df.head(8).iterrows():
+        rows = []
+        for _, row in data_df.iterrows():
             vals = [str(v).strip() for v in row]
             if any(v and v != "nan" for v in vals):
-                sample.append(vals)
+                rows.append(vals)
 
         result.append(
             {
                 "index": i,
                 "headers": headers,
-                "sample_rows": sample,
+                "sample_rows": rows,
                 "total_rows": len(data_df),
             }
         )

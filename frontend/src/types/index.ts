@@ -159,6 +159,7 @@ export interface UserParserTemplate {
   date_format: string | null;
   year_source: "inline" | "detect" | "manual" | null;
   skip_patterns: string[];
+  deduction_boundary_keyword: string | null;
   created_at: string;
 }
 

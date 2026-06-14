@@ -277,6 +277,9 @@ def parse_payslip_with_template(filepath: str, template) -> dict:
 
     skip_lower = [p.lower() for p in (template.skip_patterns or [])]
 
+    boundary_kw = (template.deduction_boundary_keyword or "").strip()
+    past_boundary = False
+
     line_items = []
     for _, row in data_rows.iterrows():
         try:
@@ -285,6 +288,15 @@ def parse_payslip_with_template(filepath: str, template) -> dict:
             continue
         if not desc or desc in ("nan", ""):
             continue
+
+        # Boundary row: any cell in the row matches exactly (case-sensitive).
+        # Exact match avoids false positives like "Total taxable pay to date".
+        if boundary_kw and any(
+            str(row.iloc[i]).strip() == boundary_kw for i in range(len(row))
+        ):
+            past_boundary = True
+            continue
+
         if any(p in desc.lower() for p in skip_lower):
             continue
         try:
@@ -294,14 +306,20 @@ def parse_payslip_with_template(filepath: str, template) -> dict:
         amount = _parse_amount(raw_amount)
         if amount is None:
             continue
+
+        if boundary_kw:
+            line_type = "deduction" if past_boundary else "earning"
+        else:
+            line_type = "earning" if amount >= 0 else "deduction"
+
         line_items.append(
             {
                 "description": desc,
                 "rate": None,
                 "units": None,
-                "amount": amount,
+                "amount": abs(amount),
                 "this_year_amount": None,
-                "line_type": "earning" if amount >= 0 else "deduction",
+                "line_type": line_type,
             }
         )
 

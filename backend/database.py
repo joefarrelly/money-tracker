@@ -45,6 +45,7 @@ def _migrate():
         ("transactions", "transfer_counterpart_id", "INTEGER"),
         ("transactions", "transfer_ignored", "BOOLEAN DEFAULT FALSE"),
         ("email_imports", "imported_at", "TIMESTAMP"),
+        ("user_parser_templates", "deduction_boundary_keyword", "VARCHAR(100)"),
     ]
     inspector = sa_inspect(engine)
     with engine.connect() as conn:

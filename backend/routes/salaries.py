@@ -1,6 +1,5 @@
 import os
 import tempfile
-from typing import Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile
 from sqlalchemy.orm import Session
@@ -49,10 +48,21 @@ def create_salary(body: SalaryCreate, db: Session = Depends(get_db)):
 
 @router.post("/bulk-upload-payslips")
 async def bulk_upload_payslips(
-    files: list[UploadFile] = File(...), db: Session = Depends(get_db)
+    files: list[UploadFile] = File(...),
+    template_id: int = Form(...),
+    current_user: str = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
-    """Parse and import multiple payslip PDFs. Skips duplicates silently."""
-    from parsers.payslip import parse_payslip_pdf
+    """Parse and import multiple payslip PDFs using a user template. Skips duplicates silently."""
+    from parsers.payslip import parse_payslip_with_template
+
+    template = (
+        db.query(UserParserTemplate)
+        .filter_by(id=template_id, user_email=current_user)
+        .first()
+    )
+    if not template:
+        raise HTTPException(status_code=404, detail="Template not found")
 
     results = []
     for file in files:
@@ -71,7 +81,7 @@ async def bulk_upload_payslips(
             tmp_path = tmp.name
 
         try:
-            parsed = parse_payslip_pdf(tmp_path)
+            parsed = parse_payslip_with_template(tmp_path, template)
         except Exception as exc:
             results.append(
                 {"filename": file.filename, "status": "error", "detail": str(exc)}
@@ -158,23 +168,21 @@ async def bulk_upload_payslips(
 @router.post("/upload-payslip", response_model=SalaryOut, status_code=201)
 async def upload_payslip(
     file: UploadFile = File(...),
-    template_id: Optional[int] = Form(None),
+    template_id: int = Form(...),
     current_user: str = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Parse a payslip PDF and store it with full line items."""
+    """Parse a payslip PDF using a user template and store it with full line items."""
     if not file.filename or not file.filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="File must be a PDF")
 
-    template = None
-    if template_id is not None:
-        template = (
-            db.query(UserParserTemplate)
-            .filter_by(id=template_id, user_email=current_user)
-            .first()
-        )
-        if not template:
-            raise HTTPException(status_code=404, detail="Template not found")
+    template = (
+        db.query(UserParserTemplate)
+        .filter_by(id=template_id, user_email=current_user)
+        .first()
+    )
+    if not template:
+        raise HTTPException(status_code=404, detail="Template not found")
 
     suffix = os.path.splitext(file.filename)[1]
     with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
@@ -182,25 +190,15 @@ async def upload_payslip(
         tmp_path = tmp.name
 
     try:
-        if template:
-            from parsers.payslip import parse_payslip_with_template
+        from parsers.payslip import parse_payslip_with_template
 
-            try:
-                parsed = parse_payslip_with_template(tmp_path, template)
-            except Exception as exc:
-                raise HTTPException(
-                    status_code=422,
-                    detail=f"Could not parse payslip with template: {exc}",
-                )
-        else:
-            from parsers.payslip import parse_payslip_pdf
-
-            try:
-                parsed = parse_payslip_pdf(tmp_path)
-            except Exception as exc:
-                raise HTTPException(
-                    status_code=422, detail=f"Could not parse payslip: {exc}"
-                )
+        try:
+            parsed = parse_payslip_with_template(tmp_path, template)
+        except Exception as exc:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Could not parse payslip with template: {exc}",
+            )
 
         if parsed["date"] is None:
             raise HTTPException(
