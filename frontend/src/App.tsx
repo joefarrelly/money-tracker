@@ -8,6 +8,7 @@ import Salaries from "./pages/Salaries";
 import Upload from "./pages/Upload";
 import Settings from "./pages/Settings";
 import EmailImports from "./pages/EmailImports";
+import Templates from "./pages/Templates";
 import Login from "./pages/Login";
 import AuthCallback from "./pages/AuthCallback";
 
@@ -18,6 +19,7 @@ const navItems = [
   { to: "/transfers", label: "Transfers" },
   { to: "/salaries", label: "Salaries" },
   { to: "/upload", label: "Upload" },
+  { to: "/templates", label: "Templates" },
   { to: "/email-imports", label: "Email Imports" },
   { to: "/settings", label: "Settings" },
 ];
@@ -73,6 +75,7 @@ function AuthedApp() {
           <Route path="/transfers" element={<Transfers />} />
           <Route path="/salaries" element={<Salaries />} />
           <Route path="/upload" element={<Upload />} />
+          <Route path="/templates" element={<Templates />} />
           <Route path="/email-imports" element={<EmailImports />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="/auth/callback" element={<AuthCallback />} />

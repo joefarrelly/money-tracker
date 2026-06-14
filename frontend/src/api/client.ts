@@ -142,9 +142,10 @@ export const bulkUploadPayslips = (files: File[]) => {
   });
 };
 
-export const uploadPayslip = (file: File) => {
+export const uploadPayslip = (file: File, templateId?: number) => {
   const fd = new FormData();
   fd.append("file", file);
+  if (templateId != null) fd.append("template_id", String(templateId));
   return fetch(`${BASE}/salaries/upload-payslip`, {
     method: "POST",
     headers: authHeaders(),
@@ -273,9 +274,10 @@ export const uploadStatement = (formData: FormData) =>
     return r.json();
   });
 
-export const previewUpload = (file: File) => {
+export const previewUpload = (file: File, templateId?: number) => {
   const fd = new FormData();
   fd.append("file", file);
+  if (templateId != null) fd.append("template_id", String(templateId));
   return fetch(`${BASE}/upload/preview`, {
     method: "POST",
     headers: authHeaders(),
@@ -312,8 +314,49 @@ export const confirmUpload = (body: object) =>
     transactions: import("../types").Transaction[];
   }>("/upload/confirm", { method: "POST", body: JSON.stringify(body) });
 
-export const getFormats = () =>
-  request<import("../types").StatementFormat[]>("/upload/formats");
+// Templates
+export const getTemplates = (templateType?: string) =>
+  request<import("../types").UserParserTemplate[]>(
+    `/templates/${templateType ? `?template_type=${templateType}` : ""}`,
+  );
+
+export const createTemplate = (body: object) =>
+  request<import("../types").UserParserTemplate>("/templates/", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+
+export const updateTemplate = (id: number, body: object) =>
+  request<import("../types").UserParserTemplate>(`/templates/${id}`, {
+    method: "PUT",
+    body: JSON.stringify(body),
+  });
+
+export const deleteTemplate = (id: number) =>
+  request<void>(`/templates/${id}`, { method: "DELETE" });
+
+export const extractTables = (file: File) => {
+  const fd = new FormData();
+  fd.append("file", file);
+  return fetch(`${BASE}/templates/extract-tables`, {
+    method: "POST",
+    headers: authHeaders(),
+    body: fd,
+  }).then(async (r) => {
+    const text = await r.text();
+    if (!r.ok) {
+      try {
+        const e = JSON.parse(text);
+        return Promise.reject(new Error(e.detail ?? `HTTP ${r.status}`));
+      } catch {
+        return Promise.reject(
+          new Error(`HTTP ${r.status}: ${text.slice(0, 120)}`),
+        );
+      }
+    }
+    return JSON.parse(text) as import("../types").ExtractTablesResponse;
+  });
+};
 
 export const detectAccount = (file: File) => {
   const fd = new FormData();
@@ -381,16 +424,14 @@ export const deleteEmailImport = (id: number) =>
 
 export const bulkUpload = (
   files: File[],
-  formatId: number,
+  templateId: number,
   accountNumber: string,
-  skipPatterns: string,
   year?: number,
 ) => {
   const fd = new FormData();
   files.forEach((f) => fd.append("files", f));
-  fd.append("format_id", String(formatId));
+  fd.append("template_id", String(templateId));
   fd.append("account_number", accountNumber);
-  fd.append("skip_patterns", skipPatterns);
   if (year != null) fd.append("year", String(year));
   return fetch(`${BASE}/upload/bulk`, {
     method: "POST",

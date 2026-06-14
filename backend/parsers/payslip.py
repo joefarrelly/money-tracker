@@ -238,3 +238,127 @@ def parse_payslip_pdf(filepath: str) -> dict:
         "total_deductions": total_deductions,
         "taxable_to_date": taxable_to_date,
     }
+
+
+def parse_payslip_with_template(filepath: str, template) -> dict:
+    """
+    Parse a payslip using a user-defined template.
+    The template must specify description_col and amount_col.
+    Earnings/deductions are inferred from the sign of the amount.
+    """
+    import camelot
+
+    tables = camelot.read_pdf(filepath, pages="all", flavor="stream")
+    if not tables or not tables.n:
+        raise ValueError("No tables found in PDF")
+
+    table_idx = template.table_index or 0
+    if table_idx >= len(tables):
+        raise ValueError(
+            f"Template specifies table {table_idx} but only {len(tables)} found"
+        )
+
+    df = tables[table_idx].df
+
+    from parsers.universal import _find_header_row
+
+    header_idx = _find_header_row(df)
+    if header_idx is None:
+        header_idx = 0
+
+    data_rows = df.iloc[header_idx + 1 :].reset_index(drop=True)
+
+    desc_col = template.description_col
+    amount_col = template.amount_col
+    if desc_col is None or amount_col is None:
+        raise ValueError(
+            "Payslip template must have description_col and amount_col assigned"
+        )
+
+    skip_lower = [p.lower() for p in (template.skip_patterns or [])]
+
+    line_items = []
+    for _, row in data_rows.iterrows():
+        try:
+            desc = str(row.iloc[desc_col]).strip()
+        except (IndexError, KeyError):
+            continue
+        if not desc or desc in ("nan", ""):
+            continue
+        if any(p in desc.lower() for p in skip_lower):
+            continue
+        try:
+            raw_amount = str(row.iloc[amount_col]).strip()
+        except (IndexError, KeyError):
+            continue
+        amount = _parse_amount(raw_amount)
+        if amount is None:
+            continue
+        line_items.append(
+            {
+                "description": desc,
+                "rate": None,
+                "units": None,
+                "amount": amount,
+                "this_year_amount": None,
+                "line_type": "earning" if amount >= 0 else "deduction",
+            }
+        )
+
+    if not line_items:
+        raise ValueError("No line items could be extracted with this template")
+
+    gross_pay = sum(i["amount"] for i in line_items if i["line_type"] == "earning")
+    total_deductions = sum(
+        abs(i["amount"]) for i in line_items if i["line_type"] == "deduction"
+    )
+    net_pay = gross_pay - total_deductions
+
+    # Best-effort text extraction for date / NI number
+    import re
+
+    import PyPDF2
+
+    text = ""
+    try:
+        with open(filepath, "rb") as f:
+            reader = PyPDF2.PdfReader(f)
+            text = "\n".join((page.extract_text() or "") for page in reader.pages[:2])
+    except Exception:
+        pass
+
+    pay_date = None
+    for pat, fmt in [
+        (r"\b(\d{1,2}/\d{1,2}/\d{4})\b", "%d/%m/%Y"),
+        (r"\b(\d{4}-\d{2}-\d{2})\b", "%Y-%m-%d"),
+        (r"\b(\d{1,2}\s+\w+\s+\d{4})\b", "%d %B %Y"),
+    ]:
+        m = re.search(pat, text)
+        if m:
+            try:
+                import pandas as pd
+
+                pay_date = pd.to_datetime(m.group(1), format=fmt).date()
+                break
+            except Exception:
+                pass
+
+    ni_number = None
+    ni_m = re.search(
+        r"NI\s+(?:Letter\s*&\s*No\s*:?\s*[A-Z]\s*)?([A-Z]{2}\d{6}[A-Z])",
+        text,
+        re.IGNORECASE,
+    )
+    if ni_m:
+        ni_number = ni_m.group(1)
+
+    return {
+        "date": pay_date,
+        "employer": "",
+        "ni_number": ni_number,
+        "line_items": line_items,
+        "net_pay": net_pay,
+        "gross_pay": gross_pay,
+        "total_deductions": total_deductions,
+        "taxable_to_date": None,
+    }

@@ -1,11 +1,11 @@
 """
-Universal bank statement parser.
+Universal bank statement / CSV parser.
 
 Instead of hardcoding column names per bank, this module:
-  1. Extracts all tables from the PDF via camelot
-  2. Scores each row/column against heuristics to find the transaction table
+  1. Extracts all tables from the file via camelot (PDF) or pandas (CSV)
+  2. Scores each table against heuristics to find the transaction table
      and infer which column plays which role (date, description, amount, balance)
-  3. Tries to match against saved StatementFormats before falling back to heuristics
+  3. Applies a user-defined template mapping when provided, skipping heuristics
   4. Returns a preview payload the user can confirm or adjust before importing
 
 Roles:
@@ -19,7 +19,6 @@ Roles:
 """
 
 import re
-import sys
 
 import camelot
 import numpy as np
@@ -378,40 +377,6 @@ def split_date_description(value: str, date_fmt: str, year: int | None = None):
     return pd.NaT, str(value).strip()
 
 
-# ── Format matching ───────────────────────────────────────────────────────────
-
-
-def match_saved_format(column_headers: list[str], formats: list) -> tuple:
-    """
-    Try to match column_headers against a list of StatementFormat ORM objects.
-    Returns (best_format | None, confidence 0-1).
-    """
-    headers_lower = [h.lower().strip() for h in column_headers]
-
-    best_fmt = None
-    best_score = 0.0
-
-    for fmt in formats:
-        fmt_headers = [h.lower().strip() for h in (fmt.column_headers or [])]
-        if not fmt_headers:
-            continue
-
-        if fmt_headers == headers_lower:
-            return fmt, 0.95
-
-        # Partial overlap score
-        common = sum(1 for h in headers_lower if h in fmt_headers)
-        score = common / max(len(fmt_headers), len(headers_lower))
-        if score > best_score:
-            best_score = score
-            best_fmt = fmt
-
-    if best_score >= 0.7:
-        return best_fmt, best_score
-
-    return None, 0.0
-
-
 # ── Public API ────────────────────────────────────────────────────────────────
 
 
@@ -430,69 +395,147 @@ def _read_tables(pdf_path: str) -> list:
     return list(camelot.read_pdf(pdf_path, flavor="stream", pages="all"))
 
 
+def extract_all_tables(file_path: str, file_type: str = "pdf") -> list[dict]:
+    """
+    Extract all tables from a file without applying any heuristics.
+    Used during template creation so users can see every table and pick the right one.
+    Returns a list of dicts with: index, headers, sample_rows, total_rows.
+    """
+    if file_type == "csv":
+        df = pd.read_csv(file_path)
+        headers = [str(c) for c in df.columns]
+        sample = df.head(10).fillna("").astype(str).values.tolist()
+        return [
+            {
+                "index": 0,
+                "headers": headers,
+                "sample_rows": sample,
+                "total_rows": len(df),
+            }
+        ]
+
+    tables = _read_tables(file_path)
+    result = []
+    for i, table in enumerate(tables):
+        df = table.df
+        header_idx = _find_header_row(df)
+        if header_idx is not None:
+            headers = [str(v).strip() for v in df.iloc[header_idx]]
+            data_df = df.iloc[header_idx + 1 :].reset_index(drop=True)
+        else:
+            headers = [f"Col {j}" for j in range(len(df.columns))]
+            data_df = df.reset_index(drop=True)
+
+        sample = []
+        for _, row in data_df.head(8).iterrows():
+            vals = [str(v).strip() for v in row]
+            if any(v and v != "nan" for v in vals):
+                sample.append(vals)
+
+        result.append(
+            {
+                "index": i,
+                "headers": headers,
+                "sample_rows": sample,
+                "total_rows": len(data_df),
+            }
+        )
+    return result
+
+
 def extract_preview(
-    pdf_path: str, filename: str = "", saved_formats: list | None = None
+    file_path: str,
+    filename: str = "",
+    file_type: str = "pdf",
+    template=None,
 ) -> dict:
     """
-    Parse the PDF enough to return a preview payload.
-    Does NOT write to the database.
+    Parse a file enough to return a preview payload. Does NOT write to the database.
+
+    If `template` is provided (a UserParserTemplate ORM object), its column mapping
+    is applied directly instead of running heuristics.
 
     Returns:
-        column_headers  — list of raw header strings
-        proposed_mapping — best-guess column mapping dict
-        matched_format   — matched StatementFormat ORM object (or None)
-        confidence       — 0-1 match confidence
+        column_headers           — list of raw header strings
+        proposed_mapping         — column mapping dict
+        confidence               — always 0.0 (kept for schema compatibility)
         detected_account_number
         detected_year
-        needs_year       — True if date format has no year component
-        sample_rows      — first 8 data rows (list of string lists)
-        total_rows       — total rows in the transaction table
+        needs_year               — True if date format has no year component
+        sample_rows              — first 8 data rows
+        total_rows               — total rows in the selected table
     """
-    text = _extract_text(pdf_path)
+    # ── CSV path ──────────────────────────────────────────────────────────────
+    if file_type == "csv":
+        df = pd.read_csv(file_path)
+        raw_headers = [str(c) for c in df.columns]
+        data_rows = df.reset_index(drop=True)
+        proposed = (
+            _mapping_from_template(template)
+            if template
+            else _infer_mapping(raw_headers, data_rows)
+        )
+        sample = data_rows.head(8).fillna("").astype(str).values.tolist()
+        needs_year = "%Y" not in (proposed.get("date_format") or "")
+        return {
+            "column_headers": raw_headers,
+            "proposed_mapping": proposed,
+            "confidence": 0.0,
+            "detected_account_number": None,
+            "detected_year": None,
+            "needs_year": needs_year,
+            "sample_rows": sample,
+            "total_rows": len(df),
+        }
+
+    # ── PDF path ──────────────────────────────────────────────────────────────
+    text = _extract_text(file_path)
     detected_account = detect_account_number(text)
-    detected_year = detect_year(pdf_path, text, filename)
+    detected_year = detect_year(file_path, text, filename)
 
-    tables = _read_tables(pdf_path)
+    tables = _read_tables(file_path)
 
-    best_df = None
-    best_header_idx = None
-    best_score = 0.0
-    best_col_count = 0
-    total_rows_all_pages = 0
+    if template and template.table_index is not None:
+        table_idx = template.table_index
+        if table_idx >= len(tables):
+            raise ValueError(
+                f"Template specifies table {table_idx} but only {len(tables)} found"
+            )
+        best_df = tables[table_idx].df
+        best_header_idx = _find_header_row(best_df) or 0
+        best_col_count = len(best_df.columns)
+    else:
+        best_df = None
+        best_header_idx = None
+        best_score = 0.0
+        best_col_count = 0
 
-    for table in tables:
-        df = table.df
-        idx = _find_header_row(df)
-        if idx is None:
-            continue
-        header_score = _score_as_header(df.iloc[idx])
-        if header_score < 0.39:
-            continue
-        efficiency = _score_column_efficiency(df, idx)
-        # Weight efficiency heavily — avoids sparse cover/summary pages
-        combined = header_score * 0.35 + efficiency * 0.65
-        if combined > best_score:
-            best_score = combined
-            best_df = df
-            best_header_idx = idx
-            best_col_count = len(df.columns)
+        for table in tables:
+            df = table.df
+            idx = _find_header_row(df)
+            if idx is None:
+                continue
+            header_score = _score_as_header(df.iloc[idx])
+            if header_score < 0.39:
+                continue
+            efficiency = _score_column_efficiency(df, idx)
+            combined = header_score * 0.35 + efficiency * 0.65
+            if combined > best_score:
+                best_score = combined
+                best_df = df
+                best_header_idx = idx
+                best_col_count = len(df.columns)
 
-    if best_df is None:
-        raise ValueError("No transaction table found in this PDF")
+        if best_df is None:
+            raise ValueError("No transaction table found in this PDF")
 
-    # Count data rows across all tables that match the best table's column count
-    for table in tables:
-        df = table.df
-        if len(df.columns) != best_col_count:
-            continue
-        idx = _find_header_row(df)
-        if idx is not None:
-            total_rows_all_pages += len(df) - idx - 1
-        else:
-            total_rows_all_pages += len(df)
+    total_rows = sum(
+        len(t.df) - (_find_header_row(t.df) or 0) - 1
+        for t in tables
+        if len(t.df.columns) == best_col_count
+    )
 
     raw_headers = [str(v).strip() for v in best_df.iloc[best_header_idx]]
-    # Trim trailing empty headers
     while raw_headers and not raw_headers[-1]:
         raw_headers.pop()
 
@@ -500,27 +543,11 @@ def extract_preview(
     if len(data_rows.columns) > len(raw_headers):
         data_rows = data_rows.iloc[:, : len(raw_headers)]
 
-    # Try to match a saved format first
-    matched_fmt = None
-    confidence = 0.0
-    if saved_formats:
-        matched_fmt, confidence = match_saved_format(raw_headers, saved_formats)
-
-    if matched_fmt and confidence >= 0.9:
-        # High-confidence match — use saved mapping directly
-        proposed = {
-            "date_col": matched_fmt.date_col,
-            "description_col": matched_fmt.description_col,
-            "balance_col": matched_fmt.balance_col,
-            "amount_style": matched_fmt.amount_style,
-            "amount_col": matched_fmt.amount_col,
-            "money_in_col": matched_fmt.money_in_col,
-            "money_out_col": matched_fmt.money_out_col,
-            "date_format": matched_fmt.date_format,
-            "year_source": matched_fmt.year_source,
-        }
-    else:
-        proposed = _infer_mapping(raw_headers, data_rows)
+    proposed = (
+        _mapping_from_template(template)
+        if template
+        else _infer_mapping(raw_headers, data_rows)
+    )
 
     sample = []
     for _, row in data_rows.head(8).iterrows():
@@ -528,30 +555,47 @@ def extract_preview(
         if any(v for v in vals):
             sample.append(vals)
 
-    needs_year = "%Y" not in proposed.get("date_format", "")
+    needs_year = "%Y" not in (proposed.get("date_format") or "")
 
     return {
         "column_headers": raw_headers,
         "proposed_mapping": proposed,
-        "matched_format": matched_fmt,
-        "confidence": round(confidence, 2),
+        "confidence": 0.0,
         "detected_account_number": detected_account,
         "detected_year": detected_year,
         "needs_year": needs_year,
         "sample_rows": sample,
-        "total_rows": total_rows_all_pages,
+        "total_rows": total_rows,
+    }
+
+
+def _mapping_from_template(template) -> dict:
+    return {
+        "date_col": template.date_col,
+        "description_col": template.description_col,
+        "date_description_col": template.date_description_col,
+        "balance_col": template.balance_col,
+        "amount_style": template.amount_style or "signed",
+        "amount_col": template.amount_col,
+        "money_in_col": template.money_in_col,
+        "money_out_col": template.money_out_col,
+        "date_format": template.date_format or "%d %b %Y",
+        "year_source": template.year_source or "inline",
     }
 
 
 def parse_with_mapping(
-    pdf_path: str,
+    file_path: str,
     mapping: dict,
     year: int | None = None,
     skip_patterns: list[str] | None = None,
+    file_type: str = "pdf",
+    table_index: int | None = None,
 ) -> pd.DataFrame:
     """
-    Parse the full PDF using a confirmed column mapping.
+    Parse the full file using a confirmed column mapping.
     Returns a normalised DataFrame: date, description, amount, balance.
+    Supports PDF (via camelot) and CSV (via pandas).
     """
     has_date = (
         mapping.get("date_col") is not None
@@ -570,7 +614,17 @@ def parse_with_mapping(
             "No description column assigned — please assign one in the column mapping"
         )
 
-    tables = _read_tables(pdf_path)
+    if file_type == "csv":
+        df = pd.read_csv(file_path)
+        df = df.map(lambda x: str(x).strip() if pd.notnull(x) else x)
+        df = df.replace({"": np.nan})
+        df = df.replace(r"[£$€,]", "", regex=True)
+        tables_data = [df]
+    else:
+        tables_data = None  # will be set below
+
+    if tables_data is None:
+        tables = _read_tables(file_path)
     all_frames = []
 
     # The minimum number of columns required: must contain every column index in the mapping
@@ -589,44 +643,33 @@ def parse_with_mapping(
     ]
     needed_cols = max(required_col_indices) + 1 if required_col_indices else 1
 
-    print(
-        f"[parse_with_mapping] tables={len(tables)} needed_cols={needed_cols} mapping={mapping}",
-        file=sys.stderr,
-    )
+    if tables_data is None:
+        all_frames = []
+        for i, table in enumerate(tables):
+            df = table.df
+            if table_index is not None and i != table_index:
+                continue
+            cols_ok = len(df.columns) >= needed_cols
+            header_idx = _find_header_row(df)
+            if not cols_ok:
+                continue
+            if header_idx is not None:
+                data = df.iloc[header_idx + 1 :].reset_index(drop=True)
+            else:
+                data = df.reset_index(drop=True)
+            if len(data) == 0:
+                continue
+            all_frames.append(data)
 
-    for i, table in enumerate(tables):
-        df = table.df
-        cols_ok = len(df.columns) >= needed_cols
-        header_idx = _find_header_row(df)
-        print(
-            f"  table[{i}] shape={df.shape} cols_ok={cols_ok} header_row={header_idx}",
-            file=sys.stderr,
-        )
-        if not cols_ok:
-            continue
-        if header_idx is not None:
-            data = df.iloc[header_idx + 1 :].reset_index(drop=True)
-        else:
-            # No repeated header on this page — include all rows and let
-            # date/amount parsing filter out non-transaction rows
-            data = df.reset_index(drop=True)
-        if len(data) == 0:
-            continue
-        all_frames.append(data)
+        if not all_frames:
+            raise ValueError("No transaction data found in PDF")
 
-    print(
-        f"[parse_with_mapping] frames_collected={len(all_frames)} total_rows={sum(len(f) for f in all_frames)}",
-        file=sys.stderr,
-    )
-
-    if not all_frames:
-        raise ValueError("No transaction data found in PDF")
-
-    df = pd.concat(all_frames, ignore_index=True)
-    df = df.map(lambda x: str(x).strip() if pd.notnull(x) else x)
-    df = df.replace({"": np.nan})
-    # Strip currency symbols and commas from all cells
-    df = df.replace(r"[£$€,]", "", regex=True)
+        df = pd.concat(all_frames, ignore_index=True)
+        df = df.map(lambda x: str(x).strip() if pd.notnull(x) else x)
+        df = df.replace({"": np.nan})
+        df = df.replace(r"[£$€,]", "", regex=True)
+    else:
+        df = tables_data[0]
 
     date_col = mapping.get("date_col")
     desc_col = mapping.get("description_col")
