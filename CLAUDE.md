@@ -4,8 +4,8 @@ Live at [montrack.fazz.uk](https://montrack.fazz.uk).
 
 ## Project Overview
 Personal finance tracker that consolidates:
-- Bank statement PDF uploads (Barclays, Chase)
-- Payslip PDF uploads (NordHealth / Provet Cloud format) with full line-item breakdown
+- Bank statement PDF/CSV uploads with user-defined parser templates
+- Payslip PDF uploads with user-defined or built-in (NordHealth) parser
 - Auto-detected recurring expenses with category assignment
 - Disposable income calculation (salary net − recurring costs)
 - Transfer detection to exclude internal movements from totals
@@ -53,11 +53,11 @@ backend/
   routes/
     auth.py         # GET /api/auth/google, GET /api/auth/callback, GET /api/auth/me
     accounts, transactions, upload, salaries, categories, dashboard,
-    settings, transfers, email_imports  # all protected by get_current_user
+    settings, transfers, email_imports, templates  # all protected by get_current_user
   parsers/
-    universal.py    # Universal PDF parser: table extraction, column-role heuristics,
-                    #   format matching, preview + confirm flow (replaces barclays.py/chase.py)
-    payslip.py      # Payslip PDF parser: handles 3 table layouts, extracts line items + NI number
+    universal.py    # Universal PDF/CSV parser: table extraction, column-role heuristics,
+                    #   template-guided or auto-detect preview + confirm flow
+    payslip.py      # Payslip PDF parser: NordHealth heuristics + template-based path
   services/         # recurring.py (auto-detection), summary.py (monthly summary + disposable income),
                     #   transfers.py (transfer candidate detection), email_poller.py (Gmail IMAP polling)
 ```
@@ -67,7 +67,7 @@ backend/
 frontend/src/
   auth.tsx          # AuthProvider + useAuth hook; token stored in localStorage
   pages/            # Dashboard, Transactions, Upload, Recurring, Salaries, Settings, Transfers,
-                    #   EmailImports, Login, AuthCallback
+                    #   EmailImports, Templates, Login, AuthCallback
   components/       # Shared components: Spinner
   api/client.ts     # fetch wrapper with 60s GET cache + auto-invalidate on mutations;
                     #   attaches Authorization: Bearer header; clears token + redirects on 401
@@ -109,25 +109,37 @@ Redirect URIs to register in Google Cloud Console: `{BASE_URL}/api/auth/callback
 ## API Response Cache (`api/client.ts`)
 GET responses are cached in memory for 60 seconds keyed by URL. Any non-GET request via `request()` clears the whole cache. Raw fetch upload functions (`uploadPayslip`, `bulkUploadPayslips`, `bulkUpload`) also call `cache.clear()` on success. Export `invalidateCache()` for manual clearing if needed.
 
-## PDF Parsing
+## Parser Templates
+`UserParserTemplate` model: `user_email`, `name`, `template_type` ("statement"/"payslip"), `file_type` ("pdf"/"csv"), `table_index`, column role assignments (same fields as `ColumnMapping`), `skip_patterns` (JSON list of description substrings to exclude).
+
+Templates are strictly per-user. The old built-in Barclays/Chase `StatementFormat` seeding has been removed; users create their own templates via the Templates page.
+
+`routes/templates.py` exposes:
+- `GET /api/templates/` — list user's templates (optional `?template_type=` filter)
+- `POST /api/templates/` — create template
+- `PUT /api/templates/{id}` — update template
+- `DELETE /api/templates/{id}` — delete template
+- `POST /api/templates/extract-tables` — upload a sample file, returns all extracted tables (headers + sample rows) for use in the template editor UI
+
+## PDF/CSV Parsing
 The upload flow is a two-step preview → confirm pattern:
-1. `POST /api/upload/preview` — saves temp file, extracts tables via camelot, scores column roles, tries to match a saved `StatementFormat`, returns a `PreviewResponse` with `preview_token`.
-2. `POST /api/upload/confirm` — loads temp file by token, calls `parse_with_mapping` with the confirmed mapping, persists transactions, optionally saves the format for reuse.
+1. `POST /api/upload/preview` — saves temp file, accepts optional `template_id`. If template provided: extracts the table at `template.table_index` and applies its column mapping. If no template: auto-detects table + infers column roles. Returns `PreviewResponse` with `preview_token`.
+2. `POST /api/upload/confirm` — loads temp file by token, parses with the confirmed mapping and `skip_patterns`, persists transactions.
+3. `POST /api/upload/bulk` — same as confirm but for multiple files at once; requires `template_id`.
 
-The universal parser (`parsers/universal.py`) handles all banks. It scores tables by header quality × column efficiency to find the transaction table, then infers column roles (date, description, amount, money_in/out, balance). `total_rows` in the preview reflects the count across all matching pages, not just the first.
+`parsers/universal.py` supports both PDF (camelot) and CSV (pandas). Key public functions:
+- `extract_all_tables(file_path, file_type)` — returns all raw tables without heuristics (used by template editor)
+- `extract_preview(file_path, filename, file_type, template)` — preview with optional template
+- `parse_with_mapping(file_path, mapping, year, skip_patterns, file_type, table_index)` — full parse
 
-The original bank-specific parsing logic is in `C:/Users/Joe/Desktop/App/personal/ScrapeBanks/bank_app.py` (`process_barclays_pdf`, `process_chase_pdf`) — kept as reference but no longer used directly.
-
-## StatementFormats
-Built-in formats for Barclays and Chase are seeded on startup. User-defined formats are saved when "Save this format" is checked on confirm. `use_count` is bumped on each successful import. Schema migrations for new columns use `_migrate()` in `database.py` (SQLAlchemy `inspect` + ALTER TABLE — no Alembic).
+Schema migrations for new columns use `_migrate()` in `database.py` (SQLAlchemy `inspect` + ALTER TABLE — no Alembic).
 
 ## Payslip Parsing
-`parsers/payslip.py` handles NordHealth / Provet Cloud payslips using camelot stream flavor (no Ghostscript needed). Handles 3 PDF layouts that this payroll system produces:
-- 5-column: Description | Rate | Units Due | Amount | This Year
-- 4-column: Description | Rate/Units (merged) | Amount | This Year
-- 4-column merged: Description | Rate | Units | Amount+ThisYear (merged cell, split on `\n`)
+`parsers/payslip.py` has two paths:
+- `parse_payslip_pdf(filepath)` — NordHealth / Provet Cloud heuristics. Handles 3 layouts: 5-column (Description | Rate | Units Due | Amount | This Year), 4-column, and 4-column merged. NI number extracted from "NI Letter & No: A PB175845B". Earnings before TOTAL row; deductions after.
+- `parse_payslip_with_template(filepath, template)` — generic path for other payroll systems. Uses `template.table_index`, `description_col`, `amount_col`, `skip_patterns`. Line type inferred from sign (positive = earning, negative = deduction). Best-effort date/NI extraction from PDF text.
 
-NI number extracted from "NI Letter & No: A PB175845B" — strips the leading category letter, stores just the NI number (`PB175845B`). Earnings appear before the TOTAL row; deductions after.
+`POST /api/salaries/upload-payslip` accepts optional `template_id` Form field. If provided, uses `parse_payslip_with_template`; otherwise falls back to NordHealth heuristics.
 
 ## Settings
 `GET/PUT /api/settings/ni-numbers` — lists all NI numbers seen in payslips, create/update display name.

@@ -5,8 +5,14 @@ import {
   uploadPayslip,
   bulkUploadPayslips,
   getIdentities,
+  getTemplates,
 } from "../api/client";
-import type { Salary, PayslipLineItem, PersonIdentity } from "../types";
+import type {
+  Salary,
+  PayslipLineItem,
+  PersonIdentity,
+  UserParserTemplate,
+} from "../types";
 import { Spinner } from "../components/Spinner";
 
 function fmt(n: number) {
@@ -92,6 +98,10 @@ function LineItemsTable({ items }: { items: PayslipLineItem[] }) {
 export default function Salaries() {
   const [salaries, setSalaries] = useState<Salary[]>([]);
   const [identities, setIdentities] = useState<PersonIdentity[]>([]);
+  const [payslipTemplates, setPayslipTemplates] = useState<
+    UserParserTemplate[]
+  >([]);
+  const [selectedTemplateId, setSelectedTemplateId] = useState<number | "">("");
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [bulkResults, setBulkResults] = useState<
@@ -111,10 +121,11 @@ export default function Salaries() {
   const bulkInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    Promise.all([getSalaries(), getIdentities()])
-      .then(([s, i]) => {
+    Promise.all([getSalaries(), getIdentities(), getTemplates("payslip")])
+      .then(([s, i, t]) => {
         setSalaries(s);
         setIdentities(i);
+        setPayslipTemplates(t);
       })
       .finally(() => setLoading(false));
   }, []);
@@ -144,7 +155,9 @@ export default function Salaries() {
     setUploadError(null);
     setUploading(true);
     try {
-      const created = await uploadPayslip(file);
+      const templateId =
+        selectedTemplateId !== "" ? (selectedTemplateId as number) : undefined;
+      const created = await uploadPayslip(file, templateId);
       setSalaries((prev) => {
         const without = prev.filter((s) => s.id !== created.id);
         return [created, ...without].sort(
@@ -214,6 +227,29 @@ export default function Salaries() {
           Upload payslip PDF
         </h2>
         {uploadError && <p className="text-sm text-red-400">{uploadError}</p>}
+        {payslipTemplates.length > 0 && (
+          <div>
+            <label className="text-xs text-slate-400">
+              Template (optional)
+            </label>
+            <select
+              value={selectedTemplateId}
+              onChange={(e) =>
+                setSelectedTemplateId(
+                  e.target.value ? Number(e.target.value) : "",
+                )
+              }
+              className="mt-1 w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm"
+            >
+              <option value="">— Auto-detect (built-in parser) —</option>
+              {payslipTemplates.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
         <div className="flex items-center gap-3">
           <input
             ref={fileInputRef}
@@ -230,7 +266,9 @@ export default function Salaries() {
             {uploading ? "Parsing…" : "Choose PDF…"}
           </button>
           <span className="text-xs text-slate-500">
-            Extracts all line items automatically
+            {selectedTemplateId
+              ? "Using selected template"
+              : "Extracts all line items automatically"}
           </span>
         </div>
       </div>

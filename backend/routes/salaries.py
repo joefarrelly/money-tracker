@@ -1,11 +1,13 @@
 import os
 import tempfile
+from typing import Optional
 
-from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile
 from sqlalchemy.orm import Session
 
+from auth import get_current_user
 from database import get_db
-from models import PayslipLineItem, Salary
+from models import PayslipLineItem, Salary, UserParserTemplate
 from schemas import SalaryCreate, SalaryOut, SalaryUpdate
 
 router = APIRouter()
@@ -154,26 +156,51 @@ async def bulk_upload_payslips(
 
 
 @router.post("/upload-payslip", response_model=SalaryOut, status_code=201)
-async def upload_payslip(file: UploadFile = File(...), db: Session = Depends(get_db)):
+async def upload_payslip(
+    file: UploadFile = File(...),
+    template_id: Optional[int] = Form(None),
+    current_user: str = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     """Parse a payslip PDF and store it with full line items."""
     if not file.filename or not file.filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="File must be a PDF")
 
-    # Write to a temp file so camelot can read it
+    template = None
+    if template_id is not None:
+        template = (
+            db.query(UserParserTemplate)
+            .filter_by(id=template_id, user_email=current_user)
+            .first()
+        )
+        if not template:
+            raise HTTPException(status_code=404, detail="Template not found")
+
     suffix = os.path.splitext(file.filename)[1]
     with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
         tmp.write(await file.read())
         tmp_path = tmp.name
 
     try:
-        from parsers.payslip import parse_payslip_pdf
+        if template:
+            from parsers.payslip import parse_payslip_with_template
 
-        try:
-            parsed = parse_payslip_pdf(tmp_path)
-        except Exception as exc:
-            raise HTTPException(
-                status_code=422, detail=f"Could not parse payslip: {exc}"
-            )
+            try:
+                parsed = parse_payslip_with_template(tmp_path, template)
+            except Exception as exc:
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"Could not parse payslip with template: {exc}",
+                )
+        else:
+            from parsers.payslip import parse_payslip_pdf
+
+            try:
+                parsed = parse_payslip_pdf(tmp_path)
+            except Exception as exc:
+                raise HTTPException(
+                    status_code=422, detail=f"Could not parse payslip: {exc}"
+                )
 
         if parsed["date"] is None:
             raise HTTPException(

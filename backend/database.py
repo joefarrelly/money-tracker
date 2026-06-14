@@ -32,7 +32,6 @@ def init_db():
     Base.metadata.create_all(bind=engine)
     _migrate()
     _seed_default_categories()
-    _seed_builtin_formats()
 
 
 def _migrate():
@@ -40,7 +39,6 @@ def _migrate():
     from sqlalchemy import inspect as sa_inspect, text
 
     migrations = [
-        ("statement_formats", "date_description_col", "INTEGER"),
         ("salaries", "source_file", "VARCHAR(255)"),
         ("salaries", "ni_number", "VARCHAR(20)"),
         ("transactions", "is_transfer", "BOOLEAN DEFAULT FALSE"),
@@ -66,59 +64,6 @@ def _migrate():
             )
         )
         conn.commit()
-
-
-def _seed_builtin_formats():
-    from models import StatementFormat
-
-    db = SessionLocal()
-    try:
-        builtin = [
-            {
-                "name": "Barclays",
-                "column_headers": [
-                    "Date",
-                    "Description",
-                    "Money out",
-                    "Money in",
-                    "Balance",
-                ],
-                "date_col": 0,
-                "description_col": 1,
-                "money_out_col": 2,
-                "money_in_col": 3,
-                "balance_col": 4,
-                "amount_col": None,
-                "amount_style": "split",
-                "date_format": "%d %b",
-                "year_source": "detect",
-                "is_builtin": True,
-            },
-            {
-                "name": "Chase",
-                "column_headers": ["Date", "Transaction details", "Amount", "Balance"],
-                "date_col": 0,
-                "description_col": 1,
-                "amount_col": 2,
-                "money_in_col": None,
-                "money_out_col": None,
-                "balance_col": 3,
-                "amount_style": "signed",
-                "date_format": "%d %b %Y",
-                "year_source": "inline",
-                "is_builtin": True,
-            },
-        ]
-        for fmt_data in builtin:
-            if (
-                not db.query(StatementFormat)
-                .filter_by(name=fmt_data["name"], is_builtin=True)
-                .first()
-            ):
-                db.add(StatementFormat(**fmt_data))
-        db.commit()
-    finally:
-        db.close()
 
 
 def _seed_default_categories():

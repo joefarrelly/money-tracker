@@ -1,22 +1,20 @@
 import os
 import uuid
-from datetime import datetime
 from typing import Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy.orm import Session
 
+from auth import get_current_user
 from database import get_db
-from models import Account, StatementFormat, Transaction
+from models import Account, Transaction, UserParserTemplate
 from parsers import universal
 from schemas import (
     BulkFileResult,
     BulkUploadResult,
     ColumnMapping,
     ConfirmUploadRequest,
-    DetectBankResult,
     PreviewResponse,
-    StatementFormatOut,
     UploadResult,
 )
 
@@ -30,9 +28,6 @@ TMP_DIR = os.path.join(UPLOAD_DIR, "tmp")
 def _ensure_dirs():
     os.makedirs(UPLOAD_DIR, exist_ok=True)
     os.makedirs(TMP_DIR, exist_ok=True)
-
-
-# ── Helpers ───────────────────────────────────────────────────────────────────
 
 
 def _get_or_create_account(bank: str, account_number: str, db: Session) -> Account:
@@ -79,53 +74,59 @@ def _persist_transactions(df, account_id: int, source_file: str, db: Session) ->
     return {"added": added, "skipped": skipped, "transactions": new_txns}
 
 
-# ── Endpoints ─────────────────────────────────────────────────────────────────
-
-
-@router.get("/formats", response_model=list[StatementFormatOut])
-def list_formats(db: Session = Depends(get_db)):
-    return (
-        db.query(StatementFormat)
-        .order_by(
-            StatementFormat.is_builtin.desc(),
-            StatementFormat.use_count.desc(),
-        )
-        .all()
-    )
+def _file_type(filename: str) -> str:
+    return "csv" if (filename or "").lower().endswith(".csv") else "pdf"
 
 
 @router.post("/preview", response_model=PreviewResponse)
-async def preview_upload(file: UploadFile, db: Session = Depends(get_db)):
+async def preview_upload(
+    file: UploadFile = File(...),
+    template_id: Optional[int] = Form(None),
+    current_user: str = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     """
-    Upload a PDF statement and get back a preview of the detected column mapping.
-    The file is saved temporarily under a preview_token UUID.
-    Call /confirm with the token (and any adjustments) to complete the import.
+    Upload a statement file and get back a preview of the detected column mapping.
+    Pass template_id to apply a saved template's mapping instead of auto-detecting.
+    The file is saved temporarily under a preview_token UUID; call /confirm to import.
     """
-    if not file.filename or not file.filename.lower().endswith(".pdf"):
-        raise HTTPException(status_code=400, detail="Only PDF files are supported")
+    filename = file.filename or ""
+    ft = _file_type(filename)
+    if ft not in ("pdf", "csv"):
+        raise HTTPException(
+            status_code=400, detail="Only PDF and CSV files are supported"
+        )
 
     _ensure_dirs()
     token = str(uuid.uuid4())
-    tmp_path = os.path.join(TMP_DIR, f"{token}.pdf")
+    suffix = ".csv" if ft == "csv" else ".pdf"
+    tmp_path = os.path.join(TMP_DIR, f"{token}{suffix}")
 
     contents = await file.read()
     with open(tmp_path, "wb") as f:
         f.write(contents)
 
+    template = None
+    if template_id is not None:
+        template = (
+            db.query(UserParserTemplate)
+            .filter_by(id=template_id, user_email=current_user)
+            .first()
+        )
+        if not template:
+            os.remove(tmp_path)
+            raise HTTPException(status_code=404, detail="Template not found")
+
     try:
-        saved_formats = db.query(StatementFormat).all()
         result = universal.extract_preview(
-            tmp_path, filename=file.filename, saved_formats=saved_formats
+            tmp_path, filename=filename, file_type=ft, template=template
         )
     except Exception as e:
         os.remove(tmp_path)
         raise HTTPException(status_code=422, detail=str(e))
 
-    matched_fmt = result.pop("matched_format")
-
     return PreviewResponse(
         preview_token=token,
-        matched_format=matched_fmt,
         confidence=result["confidence"],
         column_headers=result["column_headers"],
         proposed_mapping=ColumnMapping(**result["proposed_mapping"]),
@@ -138,21 +139,43 @@ async def preview_upload(file: UploadFile, db: Session = Depends(get_db)):
 
 
 @router.post("/confirm", response_model=UploadResult)
-def confirm_upload(body: ConfirmUploadRequest, db: Session = Depends(get_db)):
-    """
-    Confirm a previewed upload and import the transactions.
-    Optionally saves the column mapping as a named format for future uploads.
-    """
-    tmp_path = os.path.join(TMP_DIR, f"{body.preview_token}.pdf")
-    if not os.path.exists(tmp_path):
+def confirm_upload(
+    body: ConfirmUploadRequest,
+    current_user: str = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Confirm a previewed upload and import the transactions."""
+    # Find temp file (could be .pdf or .csv)
+    tmp_path = None
+    for suffix in (".pdf", ".csv"):
+        candidate = os.path.join(TMP_DIR, f"{body.preview_token}{suffix}")
+        if os.path.exists(candidate):
+            tmp_path = candidate
+            break
+    if not tmp_path:
         raise HTTPException(status_code=404, detail="Preview not found or already used")
 
+    ft = _file_type(tmp_path)
     mapping_dict = body.mapping.model_dump()
-    year = body.year
+
+    template = None
+    if body.template_id is not None:
+        template = (
+            db.query(UserParserTemplate)
+            .filter_by(id=body.template_id, user_email=current_user)
+            .first()
+        )
+
+    table_index = template.table_index if template else None
 
     try:
         df = universal.parse_with_mapping(
-            tmp_path, mapping_dict, year=year, skip_patterns=body.skip_patterns
+            tmp_path,
+            mapping_dict,
+            year=body.year,
+            skip_patterns=body.skip_patterns,
+            file_type=ft,
+            table_index=table_index,
         )
     except Exception as e:
         raise HTTPException(status_code=422, detail=str(e))
@@ -165,38 +188,10 @@ def confirm_upload(body: ConfirmUploadRequest, db: Session = Depends(get_db)):
             status_code=422, detail="No transactions could be parsed from this file"
         )
 
-    # Infer a bank name from the format or account number
-    bank_name = "unknown"
-    if body.format_id:
-        fmt = db.get(StatementFormat, body.format_id)
-        if fmt:
-            bank_name = fmt.name.lower()
-
+    bank_name = template.name.lower() if template else "unknown"
     account = _get_or_create_account(bank_name, body.account_number, db)
     counts = _persist_transactions(df, account.id, body.preview_token, db)
     db.refresh(account)
-
-    # Save format if requested
-    if body.save_format and body.format_name:
-        existing = db.query(StatementFormat).filter_by(name=body.format_name).first()
-        if not existing:
-            db.add(
-                StatementFormat(
-                    name=body.format_name,
-                    column_headers=body.column_headers,
-                    **mapping_dict,
-                    is_builtin=False,
-                )
-            )
-            db.commit()
-
-    # Bump use_count on the matched format
-    if body.format_id:
-        fmt = db.get(StatementFormat, body.format_id)
-        if fmt:
-            fmt.use_count += 1
-            fmt.last_used_at = datetime.utcnow()
-            db.commit()
 
     return UploadResult(
         added=counts["added"],
@@ -208,16 +203,12 @@ def confirm_upload(body: ConfirmUploadRequest, db: Session = Depends(get_db)):
 
 @router.post("/detect-account")
 async def detect_account(file: UploadFile):
-    """
-    Lightweight endpoint: extract text from the first few pages of a PDF and
-    return the detected account number (or null). No database writes.
-    """
-    if not file.filename or not file.filename.lower().endswith(".pdf"):
+    """Lightweight endpoint: extract account number from first pages of a PDF."""
+    if not (file.filename or "").lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Only PDF files are supported")
 
     _ensure_dirs()
-    token = str(uuid.uuid4())
-    tmp_path = os.path.join(TMP_DIR, f"{token}.pdf")
+    tmp_path = os.path.join(TMP_DIR, f"{uuid.uuid4()}.pdf")
     try:
         contents = await file.read()
         with open(tmp_path, "wb") as f:
@@ -234,81 +225,62 @@ async def detect_account(file: UploadFile):
 @router.post("/bulk", response_model=BulkUploadResult)
 async def bulk_upload(
     files: list[UploadFile] = File(...),
-    format_id: int = Form(...),
+    template_id: int = Form(...),
     account_number: str = Form(...),
-    skip_patterns: str = Form(""),
     year: Optional[int] = Form(None),
+    current_user: str = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """
-    Import multiple PDF statements at once using a saved format.
-    Each file is parsed independently; errors are reported per-file without
-    stopping the batch.
-    """
-    fmt = db.get(StatementFormat, format_id)
-    if not fmt:
-        raise HTTPException(status_code=404, detail="Format not found")
+    """Import multiple statement files at once using a saved template."""
+    template = (
+        db.query(UserParserTemplate)
+        .filter_by(id=template_id, user_email=current_user)
+        .first()
+    )
+    if not template:
+        raise HTTPException(status_code=404, detail="Template not found")
 
     mapping_dict = {
-        "date_col": fmt.date_col,
-        "description_col": fmt.description_col,
-        "date_description_col": fmt.date_description_col,
-        "balance_col": fmt.balance_col,
-        "amount_style": fmt.amount_style,
-        "amount_col": fmt.amount_col,
-        "money_in_col": fmt.money_in_col,
-        "money_out_col": fmt.money_out_col,
-        "date_format": fmt.date_format,
-        "year_source": fmt.year_source,
+        "date_col": template.date_col,
+        "description_col": template.description_col,
+        "date_description_col": template.date_description_col,
+        "balance_col": template.balance_col,
+        "amount_style": template.amount_style,
+        "amount_col": template.amount_col,
+        "money_in_col": template.money_in_col,
+        "money_out_col": template.money_out_col,
+        "date_format": template.date_format or "%d %b %Y",
+        "year_source": template.year_source or "inline",
     }
-
-    parsed_year = year if fmt.year_source == "manual" else None
-    patterns = [p.strip() for p in skip_patterns.split(",") if p.strip()]
-    account = _get_or_create_account(fmt.name.lower(), account_number, db)
-    saved_formats = db.query(StatementFormat).all()
+    parsed_year = year if template.year_source == "manual" else None
+    skip_patterns = template.skip_patterns or []
+    account = _get_or_create_account(template.name.lower(), account_number, db)
 
     _ensure_dirs()
     results: list[BulkFileResult] = []
 
     for upload in files:
-        filename = upload.filename or "unknown.pdf"
-        if not filename.lower().endswith(".pdf"):
-            results.append(BulkFileResult(filename=filename, error="Not a PDF"))
+        filename = upload.filename or "unknown"
+        ft = _file_type(filename)
+        if ft not in ("pdf", "csv"):
+            results.append(BulkFileResult(filename=filename, error="Not a PDF or CSV"))
             continue
 
-        token = str(uuid.uuid4())
-        tmp_path = os.path.join(TMP_DIR, f"{token}.pdf")
+        suffix = ".csv" if ft == "csv" else ".pdf"
+        tmp_path = os.path.join(TMP_DIR, f"{uuid.uuid4()}{suffix}")
         try:
             contents = await upload.read()
             with open(tmp_path, "wb") as f:
                 f.write(contents)
 
             df = universal.parse_with_mapping(
-                tmp_path, mapping_dict, year=parsed_year, skip_patterns=patterns
+                tmp_path,
+                mapping_dict,
+                year=parsed_year,
+                skip_patterns=skip_patterns,
+                file_type=ft,
+                table_index=template.table_index,
             )
-            note = None
-
-            if df.empty:
-                # Fallback: auto-detect the mapping for this specific file and retry
-                try:
-                    preview_data = universal.extract_preview(
-                        tmp_path, filename=filename, saved_formats=saved_formats
-                    )
-                    auto_mapping = preview_data["proposed_mapping"]
-                    auto_year = (
-                        preview_data.get("detected_year")
-                        if preview_data.get("needs_year")
-                        else None
-                    )
-                    df = universal.parse_with_mapping(
-                        tmp_path, auto_mapping, year=auto_year, skip_patterns=patterns
-                    )
-                    if not df.empty:
-                        note = (
-                            "Used auto-detected mapping (stored format gave no results)"
-                        )
-                except Exception:
-                    pass
 
             if df.empty:
                 results.append(
@@ -319,13 +291,14 @@ async def bulk_upload(
                 )
                 continue
 
-            counts = _persist_transactions(df, account.id, token, db)
+            counts = _persist_transactions(
+                df, account.id, os.path.basename(tmp_path), db
+            )
             results.append(
                 BulkFileResult(
                     filename=filename,
                     added=counts["added"],
                     skipped=counts["skipped"],
-                    note=note,
                 )
             )
         except Exception as e:
@@ -334,24 +307,9 @@ async def bulk_upload(
             if os.path.exists(tmp_path):
                 os.remove(tmp_path)
 
-    # Bump use_count once for the whole batch
-    fmt.use_count += len([r for r in results if r.error is None])
-    fmt.last_used_at = datetime.utcnow()
-    db.commit()
-
     return BulkUploadResult(
         results=results,
         total_added=sum(r.added for r in results),
         total_skipped=sum(r.skipped for r in results),
         total_errors=sum(1 for r in results if r.error is not None),
     )
-
-
-@router.get("/detect-bank", response_model=DetectBankResult)
-def detect_bank(filename: str = ""):
-    lower = filename.lower()
-    if "barclays" in lower or lower.startswith("statement"):
-        return DetectBankResult(bank="barclays")
-    if "chase" in lower:
-        return DetectBankResult(bank="chase")
-    return DetectBankResult(bank=None)

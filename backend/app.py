@@ -24,6 +24,7 @@ from routes.salaries import router as salaries_router
 from routes.settings import router as settings_router
 from routes.transactions import router as transactions_router
 from routes.transfers import router as transfers_router
+from routes.templates import router as templates_router
 from routes.upload import router as upload_router
 
 logger = logging.getLogger(__name__)
@@ -98,6 +99,12 @@ app.include_router(
     transactions_router,
     prefix="/api/transactions",
     tags=["transactions"],
+    dependencies=_auth_dep,
+)
+app.include_router(
+    templates_router,
+    prefix="/api/templates",
+    tags=["templates"],
     dependencies=_auth_dep,
 )
 app.include_router(

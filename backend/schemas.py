@@ -178,17 +178,16 @@ class UploadResult(BaseModel):
     transactions: list[TransactionOut] = []
 
 
-class DetectBankResult(BaseModel):
-    bank: Optional[str] = None
+# ── Parser templates ──────────────────────────────────────────────────────────
 
 
-# ── Statement formats ─────────────────────────────────────────────────────────
-
-
-class StatementFormatOut(BaseModel):
+class UserParserTemplateOut(BaseModel):
     id: int
     name: str
-    column_headers: list[str]
+    template_type: str
+    file_type: str
+    table_index: Optional[int] = None
+    column_headers: Optional[list[str]] = None
     date_col: Optional[int] = None
     description_col: Optional[int] = None
     date_description_col: Optional[int] = None
@@ -197,12 +196,43 @@ class StatementFormatOut(BaseModel):
     amount_col: Optional[int] = None
     money_in_col: Optional[int] = None
     money_out_col: Optional[int] = None
-    date_format: str
-    year_source: str
-    is_builtin: bool
-    use_count: int
+    date_format: Optional[str] = None
+    year_source: Optional[str] = None
+    skip_patterns: list[str]
+    created_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class UserParserTemplateCreate(BaseModel):
+    name: str
+    template_type: Literal["statement", "payslip"]
+    file_type: Literal["pdf", "csv"] = "pdf"
+    table_index: Optional[int] = None
+    column_headers: Optional[list[str]] = None
+    date_col: Optional[int] = None
+    description_col: Optional[int] = None
+    date_description_col: Optional[int] = None
+    balance_col: Optional[int] = None
+    amount_style: Literal["signed", "split"] = "signed"
+    amount_col: Optional[int] = None
+    money_in_col: Optional[int] = None
+    money_out_col: Optional[int] = None
+    date_format: Optional[str] = "%d %b %Y"
+    year_source: Literal["inline", "detect", "manual"] = "inline"
+    skip_patterns: list[str] = []
+
+
+class ExtractedTable(BaseModel):
+    index: int
+    headers: list[str]
+    sample_rows: list[list[str]]
+    total_rows: int
+
+
+class ExtractTablesResponse(BaseModel):
+    tables: list[ExtractedTable]
+    detected_account_number: Optional[str] = None
 
 
 class ColumnMapping(BaseModel):
@@ -220,7 +250,6 @@ class ColumnMapping(BaseModel):
 
 class PreviewResponse(BaseModel):
     preview_token: str
-    matched_format: Optional[StatementFormatOut] = None
     confidence: float
     column_headers: list[str]
     proposed_mapping: ColumnMapping
@@ -235,14 +264,9 @@ class ConfirmUploadRequest(BaseModel):
     preview_token: str
     account_number: str
     mapping: ColumnMapping
-    column_headers: list[str] = []  # raw headers from preview, needed if saving format
     year: Optional[int] = None
-    skip_patterns: list[
-        str
-    ] = []  # description substrings to exclude (e.g. "Opening balance")
-    save_format: bool = False
-    format_name: Optional[str] = None
-    format_id: Optional[int] = None  # reference existing format to bump use_count
+    skip_patterns: list[str] = []
+    template_id: Optional[int] = None
 
 
 class BulkFileResult(BaseModel):
