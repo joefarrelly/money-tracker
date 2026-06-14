@@ -39,7 +39,9 @@ def _classify_subject(subject: str) -> str | None:
     return None
 
 
-def poll_emails(db, address: str, password: str, label: str = "INBOX") -> int:
+def poll_emails(
+    db, address: str, password: str, label: str = "INBOX", user_email: str | None = None
+) -> int:
     """Check inbox for new PDF emails and create pending EmailImport records."""
 
     from models import EmailImport
@@ -99,6 +101,7 @@ def poll_emails(db, address: str, password: str, label: str = "INBOX") -> int:
                 raw_data, error = _parse_pdf(save_path, import_type, db)
                 db.add(
                     EmailImport(
+                        user_email=user_email or address,
                         message_id=uid,
                         subject=subject,
                         sender=sender,

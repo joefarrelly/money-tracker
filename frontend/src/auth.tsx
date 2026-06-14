@@ -50,6 +50,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.removeItem("auth_token");
     setToken(null);
     setEmail(null);
+    window.location.href = "/";
   };
 
   return (

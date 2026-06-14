@@ -2,15 +2,15 @@ import os
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, DeclarativeBase
 
-BASE_DIR = os.path.abspath(os.path.dirname(__file__))
-DATABASE_URL = os.environ.get(
-    "DATABASE_URL", f"sqlite:///{os.path.join(BASE_DIR, 'money_tracker.db')}"
-)
+_raw_url = os.environ.get("DATABASE_URL")
+if not _raw_url:
+    raise RuntimeError(
+        "DATABASE_URL is not set. "
+        "Run via Docker ('docker compose up') or set DATABASE_URL in backend/.env."
+    )
 
-_connect_args = (
-    {"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}
-)
-engine = create_engine(DATABASE_URL, connect_args=_connect_args)
+DATABASE_URL = _raw_url
+engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 
@@ -35,7 +35,7 @@ def init_db():
 
 
 def _migrate():
-    """Add columns that exist in the model but are missing from the live DB."""
+    """Add columns/indexes that exist in the model but are missing from the live DB."""
     from sqlalchemy import inspect as sa_inspect, text
 
     migrations = [
@@ -46,6 +46,12 @@ def _migrate():
         ("transactions", "transfer_ignored", "BOOLEAN DEFAULT FALSE"),
         ("email_imports", "imported_at", "TIMESTAMP"),
         ("user_parser_templates", "deduction_boundary_keyword", "VARCHAR(100)"),
+        # Multi-tenancy
+        ("accounts", "user_email", "VARCHAR(255)"),
+        ("recurring_expenses", "user_email", "VARCHAR(255)"),
+        ("salaries", "user_email", "VARCHAR(255)"),
+        ("person_identities", "user_email", "VARCHAR(255)"),
+        ("email_imports", "user_email", "VARCHAR(255)"),
     ]
     inspector = sa_inspect(engine)
     with engine.connect() as conn:
@@ -56,6 +62,15 @@ def _migrate():
                     text(f"ALTER TABLE {table} ADD COLUMN {column} {col_type}")
                 )
                 conn.commit()
+
+        # Drop the old globally-unique constraint on account_number now that it's per-user
+        conn.execute(
+            text(
+                "ALTER TABLE accounts "
+                "DROP CONSTRAINT IF EXISTS accounts_account_number_key"
+            )
+        )
+        conn.commit()
 
         # Partial unique index: prevent duplicate (date, ni_number) when ni_number is set
         conn.execute(

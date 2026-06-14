@@ -20,8 +20,9 @@ class Account(Base):
     __tablename__ = "accounts"
 
     id = Column(Integer, primary_key=True)
+    user_email = Column(String(255), nullable=True, index=True)
     bank = Column(String(50), nullable=False)
-    account_number = Column(String(50), nullable=False, unique=True)
+    account_number = Column(String(50), nullable=False)
     nickname = Column(String(100))
     created_at = Column(DateTime, default=datetime.utcnow)
 
@@ -71,6 +72,7 @@ class RecurringExpense(Base):
     __tablename__ = "recurring_expenses"
 
     id = Column(Integer, primary_key=True)
+    user_email = Column(String(255), nullable=True, index=True)
     merchant_pattern = Column(String(255), nullable=False)
     category_id = Column(Integer, ForeignKey("categories.id"), nullable=True)
     typical_amount = Column(Float, nullable=False)
@@ -93,7 +95,8 @@ class PersonIdentity(Base):
     __tablename__ = "person_identities"
 
     id = Column(Integer, primary_key=True)
-    ni_number = Column(String(20), unique=True, nullable=False)
+    user_email = Column(String(255), nullable=True, index=True)
+    ni_number = Column(String(20), nullable=False)
     display_name = Column(String(100), nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
 
@@ -102,6 +105,7 @@ class Salary(Base):
     __tablename__ = "salaries"
 
     id = Column(Integer, primary_key=True)
+    user_email = Column(String(255), nullable=True, index=True)
     date = Column(Date, nullable=False)
     gross_amount = Column(Float, nullable=True)
     net_amount = Column(Float, nullable=False)
@@ -137,6 +141,7 @@ class EmailImport(Base):
     __tablename__ = "email_imports"
 
     id = Column(Integer, primary_key=True)
+    user_email = Column(String(255), nullable=True, index=True)
     message_id = Column(String(500), unique=True, nullable=False)
     subject = Column(String(500))
     sender = Column(String(255))

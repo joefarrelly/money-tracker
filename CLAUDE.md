@@ -3,7 +3,7 @@
 Live at [montrack.fazz.uk](https://montrack.fazz.uk).
 
 ## Project Overview
-Personal finance tracker that consolidates:
+Multi-user personal finance tracker. Each Google account sees only its own data. Consolidates:
 - Bank statement PDF/CSV uploads with user-defined parser templates
 - Payslip PDF uploads with user-defined parser templates
 - Auto-detected recurring expenses with category assignment
@@ -23,6 +23,11 @@ docker compose up --build
 Runs on `http://localhost:5004`. Builds the React frontend and serves it from FastAPI.
 
 **Without Docker:**
+
+Requires a local PostgreSQL instance. Add `DATABASE_URL` to `backend/.env`:
+```
+DATABASE_URL=postgresql+psycopg2://user:pass@localhost:5432/money_tracker
+```
 
 Backend (from `backend/`):
 ```bash
@@ -50,8 +55,10 @@ backend/
   models.py         # SQLAlchemy models (DeclarativeBase)
   schemas.py        # Pydantic request/response models
   database.py       # Engine, SessionLocal, get_db dependency, DB init + seeding
+  demo_seed.py      # seeds realistic data for demo@montrack.app on every startup (idempotent)
   routes/
-    auth.py         # GET /api/auth/google, GET /api/auth/callback, GET /api/auth/me
+    auth.py         # GET /api/auth/google, GET /api/auth/callback, GET /api/auth/me,
+                    #   GET /api/auth/demo (issues JWT for demo@montrack.app, always available)
     accounts, transactions, upload, salaries, categories, dashboard,
     settings, transfers, email_imports, templates  # all protected by get_current_user
   parsers/
@@ -83,27 +90,31 @@ frontend/src/
 - **Nav:** sticky, `slate-900/95` with backdrop blur; active item is indigo pill
 
 ## Authentication
-Google SSO via OAuth 2.0. No anonymous mode — all routes require a valid JWT.
+Google SSO via OAuth 2.0. All routes require a valid JWT. A read-only demo account is always available.
 
-**Flow:** `GET /api/auth/google` → Google consent → `GET /api/auth/callback?code=&state=` → exchanges code for access token, fetches email from userinfo, issues a 30-day JWT → redirects to `{BASE_URL}/auth/callback?token=<jwt>` → frontend stores token in `localStorage`.
+**Google flow:** `GET /api/auth/google` → Google consent → `GET /api/auth/callback?code=&state=` → exchanges code for access token, fetches email from userinfo, issues a 30-day JWT → redirects to `{BASE_URL}/auth/callback?token=<jwt>` → frontend stores token in `localStorage`.
+
+**Demo flow:** `GET /api/auth/demo` → issues a JWT for `demo@montrack.app` → same redirect. The demo user's data is seeded on startup (`demo_seed.py`). All mutation endpoints return 403 for this user (middleware in `app.py` decodes the JWT and checks the email). Login page always shows a "Try demo" button.
 
 **JWT:** Signed with `JWT_SECRET` env var using HS256. `get_current_user` dependency (`backend/auth.py`) verifies it and returns the email. Applied at router-include level in `app.py` — all API routers except `/api/auth/*` require it.
 
 **CSRF:** OAuth `state` param is itself a short-lived (10 min) JWT signed with `JWT_SECRET` — no server-side session needed.
 
-**Frontend:** `AuthProvider` reads token from `localStorage`; unauthenticated users see `Login` for all routes; `AuthCallback` page handles the post-OAuth redirect and stores the token. All `fetch` calls (including raw FormData uploads) attach `Authorization: Bearer` from localStorage. 401 responses clear the token and hard-redirect to `/`.
+**Frontend:** `AuthProvider` reads token from `localStorage`; unauthenticated users see `Login` for all routes; `AuthCallback` page handles the post-OAuth redirect and stores the token. All `fetch` calls (including raw FormData uploads) attach `Authorization: Bearer` from localStorage. 401 responses clear the token and hard-redirect to `/`. Logout also hard-redirects to `/` to clear the URL. Nav shows a "Demo · read-only" badge when email is `demo@montrack.app`.
 
 **Required env vars:** `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `BASE_URL`, `JWT_SECRET`.
 Redirect URIs to register in Google Cloud Console: `{BASE_URL}/api/auth/callback`.
 
 ## Key Decisions
+- **Multi-tenancy:** `Account`, `RecurringExpense`, `Salary`, `PersonIdentity`, `EmailImport` all have a `user_email` column. Transactions are scoped via their account's `user_email` (join — no direct column). Categories are global/shared. All service functions (`summary`, `recurring`, `transfers`) take `user_email` and filter accordingly.
+- `Account.account_number` is no longer globally unique — two users can hold accounts with the same number. Uniqueness is enforced by scoping all account lookups to `(user_email, account_number)`.
 - Transactions use a unified `amount` field: positive = money in, negative = money out.
 - Duplicate detection on upload: `(account_id, date, description, amount)` tuple.
 - Recurring detection: merchant normalisation + monthly cadence (20–40 day gaps, <20% amount variance, 3+ occurrences).
 - Disposable income = net salary − sum of active recurring expense monthly costs.
 - Payslip entry is upload-only (no manual form). Both `POST /api/salaries/upload-payslip` and `POST /api/salaries/bulk-upload-payslips` require a `template_id` — there is no built-in fallback parser.
 - Payslip duplicate detection: `(date, ni_number)` at app level + partial unique DB index `WHERE ni_number IS NOT NULL`.
-- NI number is the per-person identity key for payslips (supports multiple people, e.g. partners). Mapped to display names via `PersonIdentity` in Settings.
+- NI number is the per-person identity key for payslips (supports multiple people, e.g. partners). Mapped to display names via `PersonIdentity` in Settings (scoped per user).
 - Transfer detection: transactions flagged `is_transfer=True` are excluded from monthly totals and category breakdowns so they don't inflate income/spending.
 
 ## API Response Cache (`api/client.ts`)
@@ -135,6 +146,7 @@ The upload flow is a two-step preview → confirm pattern:
 - `parse_with_mapping(file_path, mapping, year, skip_patterns, file_type, table_index)` — full parse
 
 Schema migrations for new columns use `_migrate()` in `database.py` (SQLAlchemy `inspect` + ALTER TABLE — no Alembic).
+
 
 ## Payslip Parsing
 `parsers/payslip.py` has one path: `parse_payslip_with_template(filepath, template)`.
@@ -181,7 +193,7 @@ Currency values are formatted to 2 decimal places throughout the frontend (`toLo
 
 `UserEmailConfig` model: `user_email` (PK = Google SSO email), `app_password`, `label` (default INBOX), `enabled`. Managed via `GET/PUT/DELETE /api/settings/email-config`.
 
-`EmailImport` model tracks each polled message: `message_id`, `subject`, `sender`, `received_at`, `filename`, `import_type` (statement/payslip), `status` (pending/imported/error), `error_message`, `raw_data`.
+`EmailImport` model tracks each polled message: `user_email`, `message_id`, `subject`, `sender`, `received_at`, `filename`, `import_type` (statement/payslip), `status` (pending/imported/error), `error_message`, `raw_data`.
 
 `routes/email_imports.py` exposes:
 - `GET /api/email-imports/` — list all import records

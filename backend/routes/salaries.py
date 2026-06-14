@@ -13,16 +13,28 @@ router = APIRouter()
 
 
 @router.get("/", response_model=list[SalaryOut])
-def list_salaries(db: Session = Depends(get_db)):
-    return db.query(Salary).order_by(Salary.date.desc()).all()
+def list_salaries(
+    current_user: str = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return (
+        db.query(Salary)
+        .filter_by(user_email=current_user)
+        .order_by(Salary.date.desc())
+        .all()
+    )
 
 
 @router.post("/", response_model=SalaryOut, status_code=201)
-def create_salary(body: SalaryCreate, db: Session = Depends(get_db)):
-    # Duplicate check: same date + employer (manual entries have no NI number)
+def create_salary(
+    body: SalaryCreate,
+    current_user: str = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     existing = (
         db.query(Salary)
         .filter(
+            Salary.user_email == current_user,
             Salary.date == body.date,
             Salary.employer == (body.employer or ""),
         )
@@ -34,6 +46,7 @@ def create_salary(body: SalaryCreate, db: Session = Depends(get_db)):
             detail=f"A payslip for {body.date} from '{body.employer}' already exists (id={existing.id})",
         )
     s = Salary(
+        user_email=current_user,
         date=body.date,
         net_amount=body.net_amount,
         gross_amount=body.gross_amount,
@@ -105,7 +118,10 @@ async def bulk_upload_payslips(
             continue
 
         ni = parsed.get("ni_number") or ""
-        dup_query = db.query(Salary).filter(Salary.date == parsed["date"])
+        dup_query = db.query(Salary).filter(
+            Salary.user_email == current_user,
+            Salary.date == parsed["date"],
+        )
         if ni:
             dup_query = dup_query.filter(Salary.ni_number == ni)
         else:
@@ -121,6 +137,7 @@ async def bulk_upload_payslips(
             continue
 
         salary = Salary(
+            user_email=current_user,
             date=parsed["date"],
             employer=parsed["employer"],
             ni_number=ni or None,
@@ -206,9 +223,10 @@ async def upload_payslip(
             )
 
         ni = parsed.get("ni_number") or ""
-
-        # Duplicate check: same date + NI number (or employer if NI missing)
-        dup_query = db.query(Salary).filter(Salary.date == parsed["date"])
+        dup_query = db.query(Salary).filter(
+            Salary.user_email == current_user,
+            Salary.date == parsed["date"],
+        )
         if ni:
             dup_query = dup_query.filter(Salary.ni_number == ni)
         else:
@@ -221,6 +239,7 @@ async def upload_payslip(
             )
 
         salary = Salary(
+            user_email=current_user,
             date=parsed["date"],
             employer=parsed["employer"],
             ni_number=ni or None,
@@ -229,7 +248,7 @@ async def upload_payslip(
             source_file=file.filename,
         )
         db.add(salary)
-        db.flush()  # get salary.id without committing
+        db.flush()
 
         for item in parsed["line_items"]:
             db.add(
@@ -253,8 +272,13 @@ async def upload_payslip(
 
 
 @router.patch("/{salary_id}", response_model=SalaryOut)
-def update_salary(salary_id: int, body: SalaryUpdate, db: Session = Depends(get_db)):
-    s = db.get(Salary, salary_id)
+def update_salary(
+    salary_id: int,
+    body: SalaryUpdate,
+    current_user: str = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    s = db.query(Salary).filter_by(id=salary_id, user_email=current_user).first()
     if not s:
         raise HTTPException(status_code=404, detail="Salary not found")
     for field, value in body.model_dump(exclude_unset=True).items():
@@ -265,8 +289,12 @@ def update_salary(salary_id: int, body: SalaryUpdate, db: Session = Depends(get_
 
 
 @router.delete("/{salary_id}", status_code=204)
-def delete_salary(salary_id: int, db: Session = Depends(get_db)):
-    s = db.get(Salary, salary_id)
+def delete_salary(
+    salary_id: int,
+    current_user: str = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    s = db.query(Salary).filter_by(id=salary_id, user_email=current_user).first()
     if not s:
         raise HTTPException(status_code=404, detail="Salary not found")
     db.delete(s)

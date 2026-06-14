@@ -24,8 +24,11 @@ const navItems = [
   { to: "/settings", label: "Settings" },
 ];
 
+const DEMO_EMAIL = "demo@montrack.app";
+
 function AuthedApp() {
   const { token, email, logout } = useAuth();
+  const isDemo = email === DEMO_EMAIL;
 
   if (!token) {
     return (
@@ -57,6 +60,11 @@ function AuthedApp() {
           </NavLink>
         ))}
         <div className="ml-auto flex items-center gap-3">
+          {isDemo && (
+            <span className="text-xs px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-400 border border-amber-500/30 font-medium">
+              Demo · read-only
+            </span>
+          )}
           <span className="text-slate-500 text-xs">{email}</span>
           <button
             onClick={logout}
