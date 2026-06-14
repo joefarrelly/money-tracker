@@ -34,12 +34,20 @@ def _seed(db: Session) -> None:
     cats = {c.name: c for c in db.query(Category).all()}
 
     current = Account(
-        bank="Barclays", account_number="****1234", nickname="Barclays Current"
+        user_email=DEMO_USER,
+        bank="Barclays",
+        account_number="****1234",
+        nickname="Barclays Current",
     )
     savings = Account(
-        bank="Barclays", account_number="****5678", nickname="Barclays Savings"
+        user_email=DEMO_USER,
+        bank="Barclays",
+        account_number="****5678",
+        nickname="Barclays Savings",
     )
-    chase = Account(bank="Chase", account_number="****9012", nickname="Chase")
+    chase = Account(
+        user_email=DEMO_USER, bank="Chase", account_number="****9012", nickname="Chase"
+    )
     for a in (current, savings, chase):
         db.add(a)
     db.flush()
@@ -226,6 +234,7 @@ def _seed(db: Session) -> None:
     for pattern, amount, freq, dom, cat_name in recurring:
         db.add(
             RecurringExpense(
+                user_email=DEMO_USER,
                 merchant_pattern=pattern,
                 typical_amount=amount,
                 frequency=freq,
@@ -247,6 +256,7 @@ def _seed(db: Session) -> None:
     ]
     for pay_date, month_num in salary_months:
         sal = Salary(
+            user_email=DEMO_USER,
             date=pay_date,
             gross_amount=4600.00,
             net_amount=3200.00,
@@ -275,7 +285,11 @@ def _seed(db: Session) -> None:
             )
 
     # Person identity
-    db.add(PersonIdentity(ni_number=DEMO_NI, display_name="Demo User"))
+    db.add(
+        PersonIdentity(
+            user_email=DEMO_USER, ni_number=DEMO_NI, display_name="Demo User"
+        )
+    )
 
     # Parser templates (illustrative — not functional without real files)
     db.add(
