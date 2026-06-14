@@ -34,9 +34,31 @@ function roleColor(role: string, roles: typeof STATEMENT_ROLES) {
   return roles.find((r) => r.value === role)?.color ?? "text-slate-400";
 }
 
+const DATE_FORMAT_OPTIONS: {
+  value: string;
+  label: string;
+  year_source: "inline" | "detect";
+}[] = [
+  { value: "%d %b %Y", label: "01 Jan 2024 (Chase UK)", year_source: "inline" },
+  {
+    value: "%d/%m/%Y",
+    label: "01/01/2024 (Barclays, most UK banks)",
+    year_source: "inline",
+  },
+  { value: "%Y-%m-%d", label: "2024-01-01 (ISO)", year_source: "inline" },
+  { value: "%d-%m-%Y", label: "01-01-2024", year_source: "inline" },
+  { value: "%d/%m/%y", label: "01/01/24 (short year)", year_source: "inline" },
+  {
+    value: "%d %b",
+    label: "01 Jan (Barclays PDF — year auto-detected)",
+    year_source: "detect",
+  },
+];
+
 function roleMapToMapping(
   roleMap: Record<number, ColumnRole>,
   templateType: "statement" | "payslip",
+  dateFormat: string,
 ) {
   const first = (role: ColumnRole) => {
     const e = Object.entries(roleMap).find(([, r]) => r === role);
@@ -61,6 +83,9 @@ function roleMapToMapping(
   const hasIn = first("money_in") != null;
   const hasOut = first("money_out") != null;
   const amount_style: "split" | "signed" = hasIn || hasOut ? "split" : "signed";
+  const fmtOption =
+    DATE_FORMAT_OPTIONS.find((o) => o.value === dateFormat) ??
+    DATE_FORMAT_OPTIONS[0];
 
   return {
     date_col: first("date"),
@@ -71,8 +96,8 @@ function roleMapToMapping(
     amount_col: amount_style === "signed" ? first("amount") : null,
     money_in_col: amount_style === "split" ? first("money_in") : null,
     money_out_col: amount_style === "split" ? first("money_out") : null,
-    date_format: "%d %b %Y",
-    year_source: "inline" as const,
+    date_format: dateFormat,
+    year_source: fmtOption.year_source,
   };
 }
 
@@ -100,6 +125,43 @@ function validateRoleMap(
   return null;
 }
 
+// ── Row classification ────────────────────────────────────────────────────────
+
+type RowKind = "normal" | "boundary" | "deduction" | "skipped";
+
+function classifyRows(
+  rows: string[][],
+  roleMap: Record<number, ColumnRole>,
+  previewBoundary: string,
+  previewSkips: string[],
+): RowKind[] {
+  const descIdx = Number(
+    Object.entries(roleMap).find(
+      ([, r]) => r === "description" || r === "date_description",
+    )?.[0] ?? -1,
+  );
+  const boundaryKw = previewBoundary.trim();
+  const kinds: RowKind[] = [];
+  let pastBoundary = false;
+
+  for (const row of rows) {
+    if (boundaryKw && row.some((c) => c.trim() === boundaryKw)) {
+      kinds.push("boundary");
+      pastBoundary = true;
+      continue;
+    }
+    if (previewSkips.length > 0 && descIdx >= 0) {
+      const desc = (row[descIdx] ?? "").toLowerCase();
+      if (previewSkips.some((p) => desc.includes(p))) {
+        kinds.push("skipped");
+        continue;
+      }
+    }
+    kinds.push(pastBoundary ? "deduction" : "normal");
+  }
+  return kinds;
+}
+
 // ── Column mapping UI ─────────────────────────────────────────────────────────
 
 function ColumnMappingEditor({
@@ -107,73 +169,115 @@ function ColumnMappingEditor({
   roleMap,
   onChange,
   templateType,
+  previewBoundary,
+  previewSkips,
 }: {
   table: ExtractedTable;
   roleMap: Record<number, ColumnRole>;
   onChange: (m: Record<number, ColumnRole>) => void;
   templateType: "statement" | "payslip";
+  previewBoundary: string;
+  previewSkips: string[];
 }) {
   const roles = templateType === "payslip" ? PAYSLIP_ROLES : STATEMENT_ROLES;
+  const rowKinds = classifyRows(
+    table.sample_rows,
+    roleMap,
+    previewBoundary,
+    previewSkips,
+  );
+
+  function cellClass(colIdx: number, kind: RowKind): string {
+    if (kind === "skipped") return "text-slate-600";
+    if (kind === "boundary") return "text-amber-400";
+    const role = roleMap[colIdx] ?? "ignore";
+    if (
+      kind === "deduction" &&
+      (role === "amount" || role === "money_out" || role === "money_in")
+    ) {
+      return "text-red-400";
+    }
+    return roleColor(role, roles);
+  }
 
   return (
-    <div className="overflow-x-auto rounded-xl border border-slate-800">
-      <table className="w-full text-xs">
-        <thead>
-          <tr>
-            {table.headers.map((header, colIdx) => (
-              <th
-                key={colIdx}
-                className="px-3 pt-3 pb-2 text-left align-top font-normal min-w-[120px]"
-              >
-                <div
-                  className="text-slate-300 font-medium mb-1.5 truncate"
-                  title={header}
-                >
-                  {header || `Col ${colIdx}`}
-                </div>
-                <select
-                  value={roleMap[colIdx] ?? "ignore"}
-                  onChange={(e) =>
-                    onChange({
-                      ...roleMap,
-                      [colIdx]: e.target.value as ColumnRole,
-                    })
-                  }
-                  className={`w-full bg-slate-800 border border-slate-700 rounded px-1.5 py-1 text-xs ${roleColor(roleMap[colIdx] ?? "ignore", roles)}`}
-                >
-                  {roles.map((r) => (
-                    <option
-                      key={r.value}
-                      value={r.value}
-                      className="text-slate-200"
-                    >
-                      {r.label}
-                    </option>
-                  ))}
-                </select>
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {table.sample_rows.map((row, rowIdx) => (
-            <tr
-              key={rowIdx}
-              className={rowIdx % 2 === 0 ? "bg-slate-900" : "bg-slate-800/40"}
-            >
-              {table.headers.map((_, colIdx) => (
-                <td
+    <div className="rounded-xl border border-slate-800 overflow-hidden">
+      <div className="overflow-x-auto">
+        <table className="w-full text-xs">
+          <thead className="sticky top-0 z-10 bg-slate-900">
+            <tr>
+              {table.headers.map((header, colIdx) => (
+                <th
                   key={colIdx}
-                  className={`px-3 py-1.5 max-w-[180px] truncate ${roleColor(roleMap[colIdx] ?? "ignore", roles)}`}
-                  title={row[colIdx] ?? ""}
+                  className="px-3 pt-3 pb-2 text-left align-top font-normal min-w-[120px] border-b border-slate-800"
                 >
-                  {row[colIdx] ?? ""}
-                </td>
+                  <div
+                    className="text-slate-300 font-medium mb-1.5 truncate"
+                    title={header}
+                  >
+                    {header || `Col ${colIdx}`}
+                  </div>
+                  <select
+                    value={roleMap[colIdx] ?? "ignore"}
+                    onChange={(e) =>
+                      onChange({
+                        ...roleMap,
+                        [colIdx]: e.target.value as ColumnRole,
+                      })
+                    }
+                    className={`w-full bg-slate-800 border border-slate-700 rounded px-1.5 py-1 text-xs ${roleColor(roleMap[colIdx] ?? "ignore", roles)}`}
+                  >
+                    {roles.map((r) => (
+                      <option
+                        key={r.value}
+                        value={r.value}
+                        className="text-slate-200"
+                      >
+                        {r.label}
+                      </option>
+                    ))}
+                  </select>
+                </th>
               ))}
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+        </table>
+      </div>
+      <div className="overflow-x-auto overflow-y-auto max-h-[60vh]">
+        <table className="w-full text-xs">
+          <tbody>
+            {table.sample_rows.map((row, rowIdx) => {
+              const kind = rowKinds[rowIdx] ?? "normal";
+              const isSkipped = kind === "skipped";
+              const isBoundary = kind === "boundary";
+              return (
+                <tr
+                  key={rowIdx}
+                  className={
+                    isBoundary
+                      ? "bg-amber-950/40 border-t border-b border-amber-800/50"
+                      : isSkipped
+                        ? "opacity-40"
+                        : rowIdx % 2 === 0
+                          ? "bg-slate-900"
+                          : "bg-slate-800/40"
+                  }
+                >
+                  {table.headers.map((_, colIdx) => (
+                    <td
+                      key={colIdx}
+                      className={`px-3 py-1.5 min-w-[120px] max-w-[240px] truncate ${cellClass(colIdx, kind)}`}
+                      title={row[colIdx] ?? ""}
+                    >
+                      {row[colIdx] ?? ""}
+                    </td>
+                  ))}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
@@ -195,6 +299,10 @@ function CreateWizard({ onDone }: { onDone: () => void }) {
   const [selectedTable, setSelectedTable] = useState(0);
   const [roleMap, setRoleMap] = useState<Record<number, ColumnRole>>({});
   const [skipPatterns, setSkipPatterns] = useState("");
+  const [deductionBoundary, setDeductionBoundary] = useState("");
+  const [dateFormat, setDateFormat] = useState("%d %b %Y");
+  const [previewBoundary, setPreviewBoundary] = useState("");
+  const [previewSkips, setPreviewSkips] = useState<string[]>([]);
   const [name, setName] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -210,6 +318,10 @@ function CreateWizard({ onDone }: { onDone: () => void }) {
       setTables(res.tables);
       setSelectedTable(0);
       setRoleMap({});
+      setDeductionBoundary("");
+      setDateFormat("%d %b %Y");
+      setPreviewBoundary("");
+      setPreviewSkips([]);
       setStep("map");
     } catch (err) {
       setError((err as Error).message);
@@ -230,7 +342,7 @@ function CreateWizard({ onDone }: { onDone: () => void }) {
     }
 
     const table = tables[selectedTable];
-    const mapping = roleMapToMapping(roleMap, templateType);
+    const mapping = roleMapToMapping(roleMap, templateType, dateFormat);
     const patterns = skipPatterns
       .split(",")
       .map((s) => s.trim())
@@ -246,6 +358,10 @@ function CreateWizard({ onDone }: { onDone: () => void }) {
         table_index: selectedTable,
         column_headers: table.headers,
         skip_patterns: patterns,
+        deduction_boundary_keyword:
+          templateType === "payslip" && deductionBoundary.trim()
+            ? deductionBoundary.trim()
+            : null,
         ...mapping,
       });
       onDone();
@@ -329,7 +445,8 @@ function CreateWizard({ onDone }: { onDone: () => void }) {
   const currentTable = tables[selectedTable];
 
   return (
-    <div className="max-w-4xl space-y-5">
+    <div className="space-y-4">
+      {/* Header */}
       <div className="flex items-center gap-3">
         <button
           onClick={() => setStep("upload")}
@@ -373,71 +490,135 @@ function CreateWizard({ onDone }: { onDone: () => void }) {
         </div>
       )}
 
-      {/* Column mapping */}
-      <div className="bg-slate-900 rounded-xl border border-slate-800 overflow-hidden">
-        <div className="px-4 py-3 border-b border-slate-800">
-          <p className="text-xs text-slate-400 font-medium uppercase tracking-wide">
-            Column mapping
-          </p>
-          <p className="text-xs text-slate-600 mt-0.5">
-            Assign a role to each column. Sample rows shown below.
-          </p>
+      {/* Two-column layout: table left, config right */}
+      <div className="flex gap-5 items-start">
+        {/* Left: column mapping table */}
+        <div className="flex-1 min-w-0 bg-slate-900 rounded-xl border border-slate-800 overflow-hidden">
+          <div className="px-4 py-3 border-b border-slate-800">
+            <p className="text-xs text-slate-400 font-medium uppercase tracking-wide">
+              Column mapping
+            </p>
+            <p className="text-xs text-slate-600 mt-0.5">
+              Assign a role to each column
+            </p>
+          </div>
+          <div className="p-1">
+            <ColumnMappingEditor
+              table={currentTable}
+              roleMap={roleMap}
+              onChange={setRoleMap}
+              templateType={templateType}
+              previewBoundary={previewBoundary}
+              previewSkips={previewSkips}
+            />
+          </div>
         </div>
-        <div className="p-1">
-          <ColumnMappingEditor
-            table={currentTable}
-            roleMap={roleMap}
-            onChange={setRoleMap}
-            templateType={templateType}
-          />
+
+        {/* Right: config + save (sticky) */}
+        <div className="w-72 shrink-0 sticky top-4 space-y-3">
+          {/* Date format (statements only) */}
+          {templateType === "statement" && (
+            <div className="bg-slate-900 rounded-xl border border-slate-800 p-4 space-y-2">
+              <label className="text-xs text-slate-400 font-medium uppercase tracking-wide">
+                Date format
+              </label>
+              <select
+                value={dateFormat}
+                onChange={(e) => setDateFormat(e.target.value)}
+                className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200"
+              >
+                {DATE_FORMAT_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+              <p className="text-xs text-slate-600">
+                Match the date format in your file's date column
+              </p>
+            </div>
+          )}
+
+          {/* Deduction boundary (payslips only) */}
+          {templateType === "payslip" && (
+            <div className="bg-slate-900 rounded-xl border border-slate-800 p-4 space-y-2">
+              <label className="text-xs text-slate-400 font-medium uppercase tracking-wide">
+                Deductions boundary
+              </label>
+              <input
+                type="text"
+                value={deductionBoundary}
+                onChange={(e) => setDeductionBoundary(e.target.value)}
+                onBlur={() => setPreviewBoundary(deductionBoundary.trim())}
+                placeholder="e.g. TOTAL"
+                className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm"
+              />
+              <p className="text-xs text-slate-600">
+                Rows after this keyword are deductions. Leave blank to use
+                amount sign. Use <span className="text-slate-400">TOTAL</span>{" "}
+                for NordHealth.
+              </p>
+            </div>
+          )}
+
+          {/* Skip patterns */}
+          <div className="bg-slate-900 rounded-xl border border-slate-800 p-4 space-y-2">
+            <label className="text-xs text-slate-400 font-medium uppercase tracking-wide">
+              Skip rows
+            </label>
+            <input
+              type="text"
+              value={skipPatterns}
+              onChange={(e) => setSkipPatterns(e.target.value)}
+              onBlur={() =>
+                setPreviewSkips(
+                  skipPatterns
+                    .split(",")
+                    .map((s) => s.trim().toLowerCase())
+                    .filter(Boolean),
+                )
+              }
+              placeholder={
+                templateType === "payslip"
+                  ? "e.g. Ers NIC, NET PAY"
+                  : "e.g. Opening balance"
+              }
+              className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm"
+            />
+            <p className="text-xs text-slate-600">
+              Comma-separated descriptions to exclude
+            </p>
+          </div>
+
+          {/* Name + save */}
+          <div className="bg-slate-900 rounded-xl border border-slate-800 p-4 space-y-3">
+            <label className="text-xs text-slate-400 font-medium uppercase tracking-wide">
+              Template name
+            </label>
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder={
+                templateType === "statement"
+                  ? "e.g. Barclays, Chase, Monzo"
+                  : "e.g. NordHealth payslip"
+              }
+              className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm"
+            />
+          </div>
+
+          {error && <p className="text-sm text-red-400">{error}</p>}
+
+          <button
+            onClick={handleSave}
+            disabled={saving}
+            className="w-full bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors"
+          >
+            {saving ? "Saving…" : "Save template"}
+          </button>
         </div>
       </div>
-
-      {/* Skip patterns */}
-      <div className="bg-slate-900 rounded-xl border border-slate-800 p-4 space-y-2">
-        <label className="text-xs text-slate-400 font-medium uppercase tracking-wide">
-          Skip rows
-        </label>
-        <input
-          type="text"
-          value={skipPatterns}
-          onChange={(e) => setSkipPatterns(e.target.value)}
-          placeholder="e.g. Opening balance, Closing balance, Total"
-          className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm"
-        />
-        <p className="text-xs text-slate-600">
-          Comma-separated descriptions to exclude (e.g. balance carry-forward
-          rows)
-        </p>
-      </div>
-
-      {/* Name + save */}
-      <div className="bg-slate-900 rounded-xl border border-slate-800 p-4 space-y-3">
-        <label className="text-xs text-slate-400 font-medium uppercase tracking-wide">
-          Template name
-        </label>
-        <input
-          type="text"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          placeholder={
-            templateType === "statement"
-              ? "e.g. Barclays, Chase, Monzo"
-              : "e.g. NordHealth payslip"
-          }
-          className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm"
-        />
-      </div>
-
-      {error && <p className="text-sm text-red-400">{error}</p>}
-
-      <button
-        onClick={handleSave}
-        disabled={saving}
-        className="w-full bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors"
-      >
-        {saving ? "Saving…" : "Save template"}
-      </button>
     </div>
   );
 }

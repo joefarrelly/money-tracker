@@ -197,4 +197,9 @@ class UserParserTemplate(Base):
     # Description substrings that cause a row to be skipped (e.g. "Opening balance")
     skip_patterns = Column(JSON, nullable=False, default=list)
 
+    # Payslip only: keyword in a row that marks the start of the deductions section.
+    # Rows after a row containing this keyword are classified as deductions regardless
+    # of sign. Mirrors the NordHealth "TOTAL" boundary row behaviour.
+    deduction_boundary_keyword = Column(String(100), nullable=True)
+
     created_at = Column(DateTime, default=datetime.utcnow)

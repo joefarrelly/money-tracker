@@ -199,6 +199,7 @@ class UserParserTemplateOut(BaseModel):
     date_format: Optional[str] = None
     year_source: Optional[str] = None
     skip_patterns: list[str]
+    deduction_boundary_keyword: Optional[str] = None
     created_at: datetime
 
     model_config = {"from_attributes": True}
@@ -221,6 +222,7 @@ class UserParserTemplateCreate(BaseModel):
     date_format: Optional[str] = "%d %b %Y"
     year_source: Literal["inline", "detect", "manual"] = "inline"
     skip_patterns: list[str] = []
+    deduction_boundary_keyword: Optional[str] = None
 
 
 class ExtractedTable(BaseModel):

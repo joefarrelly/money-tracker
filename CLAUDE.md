@@ -5,7 +5,7 @@ Live at [montrack.fazz.uk](https://montrack.fazz.uk).
 ## Project Overview
 Personal finance tracker that consolidates:
 - Bank statement PDF/CSV uploads with user-defined parser templates
-- Payslip PDF uploads with user-defined or built-in (NordHealth) parser
+- Payslip PDF uploads with user-defined parser templates
 - Auto-detected recurring expenses with category assignment
 - Disposable income calculation (salary net − recurring costs)
 - Transfer detection to exclude internal movements from totals
@@ -57,7 +57,7 @@ backend/
   parsers/
     universal.py    # Universal PDF/CSV parser: table extraction, column-role heuristics,
                     #   template-guided or auto-detect preview + confirm flow
-    payslip.py      # Payslip PDF parser: NordHealth heuristics + template-based path
+    payslip.py      # Payslip PDF parser: template-based path only (NordHealth heuristics removed)
   services/         # recurring.py (auto-detection), summary.py (monthly summary + disposable income),
                     #   transfers.py (transfer candidate detection), email_poller.py (Gmail IMAP polling)
 ```
@@ -101,7 +101,7 @@ Redirect URIs to register in Google Cloud Console: `{BASE_URL}/api/auth/callback
 - Duplicate detection on upload: `(account_id, date, description, amount)` tuple.
 - Recurring detection: merchant normalisation + monthly cadence (20–40 day gaps, <20% amount variance, 3+ occurrences).
 - Disposable income = net salary − sum of active recurring expense monthly costs.
-- Payslip entry is upload-only (no manual form). Single: `POST /api/salaries/upload-payslip`. Bulk: `POST /api/salaries/bulk-upload-payslips`.
+- Payslip entry is upload-only (no manual form). Both `POST /api/salaries/upload-payslip` and `POST /api/salaries/bulk-upload-payslips` require a `template_id` — there is no built-in fallback parser.
 - Payslip duplicate detection: `(date, ni_number)` at app level + partial unique DB index `WHERE ni_number IS NOT NULL`.
 - NI number is the per-person identity key for payslips (supports multiple people, e.g. partners). Mapped to display names via `PersonIdentity` in Settings.
 - Transfer detection: transactions flagged `is_transfer=True` are excluded from monthly totals and category breakdowns so they don't inflate income/spending.
@@ -110,7 +110,7 @@ Redirect URIs to register in Google Cloud Console: `{BASE_URL}/api/auth/callback
 GET responses are cached in memory for 60 seconds keyed by URL. Any non-GET request via `request()` clears the whole cache. Raw fetch upload functions (`uploadPayslip`, `bulkUploadPayslips`, `bulkUpload`) also call `cache.clear()` on success. Export `invalidateCache()` for manual clearing if needed.
 
 ## Parser Templates
-`UserParserTemplate` model: `user_email`, `name`, `template_type` ("statement"/"payslip"), `file_type` ("pdf"/"csv"), `table_index`, column role assignments (same fields as `ColumnMapping`), `skip_patterns` (JSON list of description substrings to exclude).
+`UserParserTemplate` model: `user_email`, `name`, `template_type` ("statement"/"payslip"), `file_type` ("pdf"/"csv"), `table_index`, column role assignments (same fields as `ColumnMapping`), `skip_patterns` (JSON list of description substrings to exclude), `deduction_boundary_keyword` (payslip only — exact cell value that marks the start of the deductions section, case-sensitive).
 
 Templates are strictly per-user. The old built-in Barclays/Chase `StatementFormat` seeding has been removed; users create their own templates via the Templates page.
 
@@ -119,7 +119,7 @@ Templates are strictly per-user. The old built-in Barclays/Chase `StatementForma
 - `POST /api/templates/` — create template
 - `PUT /api/templates/{id}` — update template
 - `DELETE /api/templates/{id}` — delete template
-- `POST /api/templates/extract-tables` — upload a sample file, returns all extracted tables (headers + sample rows) for use in the template editor UI
+- `POST /api/templates/extract-tables` — upload a sample file, returns all extracted tables (all rows, not just samples) for use in the template editor UI
 
 ## PDF/CSV Parsing
 The upload flow is a two-step preview → confirm pattern:
@@ -135,11 +135,17 @@ The upload flow is a two-step preview → confirm pattern:
 Schema migrations for new columns use `_migrate()` in `database.py` (SQLAlchemy `inspect` + ALTER TABLE — no Alembic).
 
 ## Payslip Parsing
-`parsers/payslip.py` has two paths:
-- `parse_payslip_pdf(filepath)` — NordHealth / Provet Cloud heuristics. Handles 3 layouts: 5-column (Description | Rate | Units Due | Amount | This Year), 4-column, and 4-column merged. NI number extracted from "NI Letter & No: A PB175845B". Earnings before TOTAL row; deductions after.
-- `parse_payslip_with_template(filepath, template)` — generic path for other payroll systems. Uses `template.table_index`, `description_col`, `amount_col`, `skip_patterns`. Line type inferred from sign (positive = earning, negative = deduction). Best-effort date/NI extraction from PDF text.
+`parsers/payslip.py` has one path: `parse_payslip_with_template(filepath, template)`.
+- Uses `template.table_index`, `description_col`, `amount_col`, `skip_patterns`.
+- Line type: if `template.deduction_boundary_keyword` is set, rows after a row where any cell exactly equals that keyword (case-sensitive) are deductions; otherwise inferred from sign (positive = earning, negative = deduction).
+- The boundary row itself is excluded from line items.
+- Best-effort date/NI extraction from raw PDF text via PyPDF2.
+- `parse_payslip_pdf` (NordHealth heuristics) has been removed.
 
-`POST /api/salaries/upload-payslip` accepts optional `template_id` Form field. If provided, uses `parse_payslip_with_template`; otherwise falls back to NordHealth heuristics.
+`POST /api/salaries/upload-payslip` — requires `template_id` Form field (no fallback).
+`POST /api/salaries/bulk-upload-payslips` — requires `template_id` Form field.
+
+**NordHealth template settings:** table 0, description col 0, amount col 3 (the AMOUNT column), deduction boundary keyword `TOTAL`, skip patterns: `Ers NIC, Ers Pension, Tax District, Tax Reference, Tax:, NET PAY, Total taxable pay to date`.
 
 ## Settings
 `GET/PUT /api/settings/ni-numbers` — lists all NI numbers seen in payslips, create/update display name.
