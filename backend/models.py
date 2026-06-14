@@ -153,6 +153,17 @@ class EmailImport(Base):
     imported_at = Column(DateTime)
 
 
+class UserEmailConfig(Base):
+    __tablename__ = "user_email_configs"
+
+    user_email = Column(String(255), primary_key=True)
+    app_password = Column(String(255), nullable=False)
+    label = Column(String(100), default="INBOX")
+    enabled = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow)
+
+
 class StatementFormat(Base):
     """
     Saved column mapping for a bank statement format.

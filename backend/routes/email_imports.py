@@ -5,8 +5,16 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from auth import get_current_user
 from database import get_db
-from models import Account, EmailImport, PayslipLineItem, Salary, Transaction
+from models import (
+    Account,
+    EmailImport,
+    PayslipLineItem,
+    Salary,
+    Transaction,
+    UserEmailConfig,
+)
 
 router = APIRouter()
 
@@ -45,11 +53,19 @@ def list_imports(status: str | None = None, db: Session = Depends(get_db)):
 
 
 @router.post("/poll", response_model=PollResult)
-def trigger_poll(db: Session = Depends(get_db)):
+def trigger_poll(
+    current_user: str = Depends(get_current_user), db: Session = Depends(get_db)
+):
     from services.email_poller import poll_emails
 
+    cfg = db.get(UserEmailConfig, current_user)
+    if not cfg or not cfg.enabled:
+        raise HTTPException(
+            status_code=400,
+            detail="Email polling is not configured. Add your Gmail App Password in settings.",
+        )
     try:
-        count = poll_emails(db)
+        count = poll_emails(db, cfg.user_email, cfg.app_password, cfg.label or "INBOX")
     except RuntimeError as exc:
         raise HTTPException(status_code=502, detail=str(exc))
     return PollResult(

@@ -1,9 +1,11 @@
 from fastapi import APIRouter, Depends
+from pydantic import BaseModel
 from sqlalchemy import distinct
 from sqlalchemy.orm import Session
 
+from auth import get_current_user
 from database import get_db
-from models import PersonIdentity, Salary
+from models import PersonIdentity, Salary, UserEmailConfig
 from schemas import PersonIdentityOut, PersonIdentityUpdate
 
 router = APIRouter()
@@ -44,3 +46,70 @@ def set_ni_name(
     db.commit()
     db.refresh(identity)
     return identity
+
+
+class EmailConfigOut(BaseModel):
+    configured: bool
+    user_email: str | None = None
+    label: str
+    enabled: bool
+
+
+class EmailConfigUpdate(BaseModel):
+    app_password: str
+    label: str = "INBOX"
+    enabled: bool = True
+
+
+@router.get("/email-config", response_model=EmailConfigOut)
+def get_email_config(
+    current_user: str = Depends(get_current_user), db: Session = Depends(get_db)
+):
+    cfg = db.get(UserEmailConfig, current_user)
+    if not cfg:
+        return EmailConfigOut(configured=False, label="INBOX", enabled=True)
+    return EmailConfigOut(
+        configured=True,
+        user_email=cfg.user_email,
+        label=cfg.label or "INBOX",
+        enabled=cfg.enabled,
+    )
+
+
+@router.put("/email-config", response_model=EmailConfigOut)
+def set_email_config(
+    body: EmailConfigUpdate,
+    current_user: str = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    cfg = db.get(UserEmailConfig, current_user)
+    if cfg:
+        cfg.app_password = body.app_password
+        cfg.label = body.label
+        cfg.enabled = body.enabled
+    else:
+        cfg = UserEmailConfig(
+            user_email=current_user,
+            app_password=body.app_password,
+            label=body.label,
+            enabled=body.enabled,
+        )
+        db.add(cfg)
+    db.commit()
+    return EmailConfigOut(
+        configured=True,
+        user_email=cfg.user_email,
+        label=cfg.label or "INBOX",
+        enabled=cfg.enabled,
+    )
+
+
+@router.delete("/email-config")
+def delete_email_config(
+    current_user: str = Depends(get_current_user), db: Session = Depends(get_db)
+):
+    cfg = db.get(UserEmailConfig, current_user)
+    if cfg:
+        db.delete(cfg)
+        db.commit()
+    return {"configured": False}

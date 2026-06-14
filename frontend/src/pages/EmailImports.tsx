@@ -1,11 +1,16 @@
 import { useEffect, useState } from "react";
 import { Spinner } from "../components/Spinner";
+import { useAuth } from "../auth";
 import {
   getEmailImports,
   pollEmails,
   confirmEmailImport,
   skipEmailImport,
   deleteEmailImport,
+  getEmailConfig,
+  setEmailConfig,
+  deleteEmailConfig,
+  type EmailConfig,
 } from "../api/client";
 import type { EmailImport } from "../types";
 
@@ -240,7 +245,6 @@ function ImportCard({
           : "border-slate-800 hover:border-slate-700"
       }`}
     >
-      {/* Header row — always visible */}
       <div className="px-4 py-3 flex items-center gap-3">
         <button
           className="flex items-center gap-3 flex-1 min-w-0 text-left"
@@ -313,7 +317,6 @@ function ImportCard({
         </div>
       </div>
 
-      {/* Expanded detail */}
       {expanded && (
         <div className="border-t border-slate-800 px-4 py-4 space-y-4">
           {d && record.import_type === "payslip" && <PayslipDetail d={d} />}
@@ -332,7 +335,6 @@ function ImportCard({
             </p>
           )}
 
-          {/* Actions */}
           <div className="flex items-center justify-end gap-3 pt-1">
             {isPending && (
               <>
@@ -368,7 +370,149 @@ function ImportCard({
   );
 }
 
+function EmailConfigForm({
+  userEmail,
+  existing,
+  onSaved,
+  onCancel,
+}: {
+  userEmail: string | null;
+  existing: EmailConfig | null;
+  onSaved: (cfg: EmailConfig) => void;
+  onCancel?: () => void;
+}) {
+  const [password, setPassword] = useState("");
+  const [label, setLabel] = useState(existing?.label ?? "INBOX");
+  const [enabled, setEnabled] = useState(existing?.enabled ?? true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleSave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!password.trim()) {
+      setError("App Password is required");
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    try {
+      const cfg = await setEmailConfig({
+        app_password: password.trim(),
+        label: label.trim() || "INBOX",
+        enabled,
+      });
+      onSaved(cfg);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Save failed");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <form onSubmit={handleSave} className="space-y-4">
+      <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-4">
+        <div>
+          <p className="text-sm text-slate-300 font-medium mb-1">
+            Gmail account
+          </p>
+          <p className="text-sm text-slate-400">
+            {userEmail ?? "your Google account email"}
+          </p>
+          <p className="text-xs text-slate-500 mt-1">
+            Email polling uses this account — the same one you sign in with.
+          </p>
+        </div>
+
+        <div>
+          <label className="block text-sm text-slate-300 font-medium mb-1.5">
+            Gmail App Password
+          </label>
+          <input
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder="xxxx xxxx xxxx xxxx"
+            className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+          />
+          <p className="text-xs text-slate-500 mt-1.5">
+            Generate one at{" "}
+            <span className="text-slate-400">
+              Google Account → Security → 2-Step Verification → App passwords
+            </span>
+            . Select app: Mail, device: Other.
+          </p>
+        </div>
+
+        <div>
+          <label className="block text-sm text-slate-300 font-medium mb-1.5">
+            Gmail label{" "}
+            <span className="text-slate-500 font-normal">(optional)</span>
+          </label>
+          <input
+            type="text"
+            value={label}
+            onChange={(e) => setLabel(e.target.value)}
+            placeholder="INBOX"
+            className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+          />
+          <p className="text-xs text-slate-500 mt-1.5">
+            Only check a specific label (e.g.{" "}
+            <span className="text-slate-400">finance</span>). Leave as INBOX to
+            check all mail.
+          </p>
+        </div>
+
+        {existing && (
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={enabled}
+              onChange={(e) => setEnabled(e.target.checked)}
+              className="w-4 h-4 rounded"
+            />
+            <span className="text-sm text-slate-300">
+              Enable automatic polling
+            </span>
+          </label>
+        )}
+
+        {error && (
+          <p className="text-sm text-red-400 bg-red-900/20 border border-red-800/30 rounded-lg px-3 py-2">
+            {error}
+          </p>
+        )}
+
+        <div className="flex items-center gap-3 pt-1">
+          {onCancel && (
+            <button
+              type="button"
+              onClick={onCancel}
+              className="text-sm text-slate-400 hover:text-slate-200 transition-colors"
+            >
+              Cancel
+            </button>
+          )}
+          <button
+            type="submit"
+            disabled={saving}
+            className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+          >
+            {saving ? "Saving…" : existing ? "Update" : "Save & enable"}
+          </button>
+        </div>
+      </div>
+    </form>
+  );
+}
+
 export default function EmailImports() {
+  const { email: userEmail } = useAuth();
+  const [config, setConfig] = useState<EmailConfig | null>(null);
+  const [configLoading, setConfigLoading] = useState(true);
+  const [showConfigForm, setShowConfigForm] = useState(false);
+  const [removingConfig, setRemovingConfig] = useState(false);
+
   const [imports, setImports] = useState<EmailImport[]>([]);
   const [loading, setLoading] = useState(true);
   const [polling, setPolling] = useState(false);
@@ -377,14 +521,21 @@ export default function EmailImports() {
   const [error, setError] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<number | null>(null);
 
-  const load = () =>
+  const loadConfig = () =>
+    getEmailConfig()
+      .then(setConfig)
+      .catch(() => null)
+      .finally(() => setConfigLoading(false));
+
+  const loadImports = () =>
     getEmailImports()
       .then(setImports)
       .catch((e) => setError(e.message));
 
   useEffect(() => {
+    loadConfig();
     setLoading(true);
-    load().finally(() => setLoading(false));
+    loadImports().finally(() => setLoading(false));
   }, []);
 
   const handlePoll = async () => {
@@ -394,11 +545,24 @@ export default function EmailImports() {
     try {
       const res = await pollEmails();
       setPollMsg(res.message);
-      await load();
+      await loadImports();
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Poll failed");
     } finally {
       setPolling(false);
+    }
+  };
+
+  const handleRemoveConfig = async () => {
+    setRemovingConfig(true);
+    try {
+      await deleteEmailConfig();
+      setConfig({ configured: false, label: "INBOX", enabled: true });
+      setShowConfigForm(false);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to remove config");
+    } finally {
+      setRemovingConfig(false);
     }
   };
 
@@ -407,7 +571,7 @@ export default function EmailImports() {
     setError(null);
     try {
       await fn();
-      await load();
+      await loadImports();
       setExpandedId(null);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Action failed");
@@ -415,6 +579,64 @@ export default function EmailImports() {
       setBusyId(null);
     }
   };
+
+  if (configLoading) return <Spinner />;
+
+  // Setup screen — no config yet
+  if (!config?.configured && !showConfigForm) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-lg font-semibold">Email Imports</h1>
+          <p className="text-sm text-slate-400 mt-0.5">
+            Automatically import bank statements and payslips sent to your Gmail
+            inbox.
+          </p>
+        </div>
+
+        <div className="bg-slate-900 border border-slate-800 rounded-xl px-6 py-8 text-center space-y-4">
+          <div className="w-12 h-12 bg-slate-800 rounded-xl flex items-center justify-center text-2xl mx-auto">
+            ✉️
+          </div>
+          <div>
+            <p className="text-slate-200 font-medium">Connect your Gmail</p>
+            <p className="text-sm text-slate-400 mt-1 max-w-sm mx-auto">
+              Add a Gmail App Password to let Money Tracker poll your inbox for
+              PDFs with "payslip" or "bank" in the subject.
+            </p>
+          </div>
+          <button
+            onClick={() => setShowConfigForm(true)}
+            className="bg-indigo-600 hover:bg-indigo-500 px-5 py-2 rounded-lg text-sm font-medium transition-colors"
+          >
+            Set up email polling
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (!config?.configured && showConfigForm) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-lg font-semibold">Email Imports</h1>
+          <p className="text-sm text-slate-400 mt-0.5">
+            Connect your Gmail to enable automatic PDF imports.
+          </p>
+        </div>
+        <EmailConfigForm
+          userEmail={userEmail}
+          existing={null}
+          onSaved={(cfg) => {
+            setConfig(cfg);
+            setShowConfigForm(false);
+          }}
+          onCancel={() => setShowConfigForm(false)}
+        />
+      </div>
+    );
+  }
 
   const pending = imports.filter((i) => i.status === "pending");
   const history = imports.filter((i) => i.status !== "pending");
@@ -426,8 +648,11 @@ export default function EmailImports() {
           <h1 className="text-lg font-semibold">Email Imports</h1>
           <p className="text-sm text-slate-400 mt-0.5">
             Send PDFs to{" "}
-            <span className="text-slate-300">joefarrelly96@gmail.com</span> with
-            "payslip" or "bank" in the subject — they'll appear here for review.
+            <span className="text-slate-300">
+              {config?.user_email ?? userEmail}
+            </span>{" "}
+            with "payslip" or "bank" in the subject — they'll appear here for
+            review.
           </p>
         </div>
         <button
@@ -524,6 +749,50 @@ export default function EmailImports() {
           )}
         </>
       )}
+
+      {/* Email settings panel */}
+      <section>
+        <button
+          onClick={() => setShowConfigForm((v) => !v)}
+          className="text-sm text-slate-500 hover:text-slate-300 transition-colors flex items-center gap-1"
+        >
+          <svg
+            className={`w-3.5 h-3.5 transition-transform ${showConfigForm ? "rotate-180" : ""}`}
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M19 9l-7 7-7-7"
+            />
+          </svg>
+          Email settings
+        </button>
+
+        {showConfigForm && (
+          <div className="mt-3 space-y-3">
+            <EmailConfigForm
+              userEmail={userEmail}
+              existing={config}
+              onSaved={(cfg) => {
+                setConfig(cfg);
+                setShowConfigForm(false);
+              }}
+              onCancel={() => setShowConfigForm(false)}
+            />
+            <button
+              onClick={handleRemoveConfig}
+              disabled={removingConfig}
+              className="text-xs text-red-500 hover:text-red-400 disabled:opacity-40 transition-colors"
+            >
+              {removingConfig ? "Removing…" : "Remove email config"}
+            </button>
+          </div>
+        )}
+      </section>
     </div>
   );
 }
