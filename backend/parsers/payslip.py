@@ -10,6 +10,7 @@ Returns a dict ready to be stored as a Salary + PayslipLineItem records.
 
 from __future__ import annotations
 
+import fnmatch
 import re
 from datetime import datetime, date
 
@@ -275,13 +276,30 @@ def parse_payslip_with_template(filepath: str, template) -> dict:
             "Payslip template must have description_col and amount_col assigned"
         )
 
-    skip_lower = [p.lower() for p in (template.skip_patterns or [])]
+    # Parse skip patterns: trailing | means cutoff (skip this row + all after).
+    # * in the pattern → prefix/glob match; otherwise exact match (case-sensitive).
+    _raw_skips = [p.strip() for p in (template.skip_patterns or []) if p.strip()]
+    _normal_skips: list[str] = []
+    _cutoff_skips: list[str] = []
+    for _p in _raw_skips:
+        if _p.endswith("|"):
+            _cutoff_skips.append(_p[:-1])
+        else:
+            _normal_skips.append(_p)
+
+    def _skip_match(desc: str, patterns: list[str]) -> bool:
+        return any(
+            fnmatch.fnmatch(desc, p) if "*" in p else (desc == p) for p in patterns
+        )
 
     boundary_kw = (template.deduction_boundary_keyword or "").strip()
     past_boundary = False
+    past_cutoff = False
 
     line_items = []
     for _, row in data_rows.iterrows():
+        if past_cutoff:
+            continue
         try:
             desc = str(row.iloc[desc_col]).strip()
         except (IndexError, KeyError):
@@ -297,7 +315,11 @@ def parse_payslip_with_template(filepath: str, template) -> dict:
             past_boundary = True
             continue
 
-        if any(p in desc.lower() for p in skip_lower):
+        if _cutoff_skips and _skip_match(desc, _cutoff_skips):
+            past_cutoff = True
+            continue
+
+        if _normal_skips and _skip_match(desc, _normal_skips):
             continue
         try:
             raw_amount = str(row.iloc[amount_col]).strip()

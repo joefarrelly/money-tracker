@@ -127,6 +127,19 @@ function validateRoleMap(
 
 // ── Row classification ────────────────────────────────────────────────────────
 
+// * → glob full-match (case-sensitive); otherwise exact full-match. Pattern must not include trailing |.
+function matchesSkip(desc: string, pattern: string): boolean {
+  if (pattern.includes("*")) {
+    const regex = new RegExp(
+      "^" +
+        pattern.replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*") +
+        "$",
+    );
+    return regex.test(desc);
+  }
+  return desc === pattern;
+}
+
 type RowKind = "normal" | "boundary" | "deduction" | "skipped";
 
 function classifyRows(
@@ -141,18 +154,32 @@ function classifyRows(
     )?.[0] ?? -1,
   );
   const boundaryKw = previewBoundary.trim();
+  const normalSkips = previewSkips.filter((p) => !p.endsWith("|"));
+  const cutoffSkips = previewSkips
+    .filter((p) => p.endsWith("|"))
+    .map((p) => p.slice(0, -1));
   const kinds: RowKind[] = [];
   let pastBoundary = false;
+  let pastCutoff = false;
 
   for (const row of rows) {
+    if (pastCutoff) {
+      kinds.push("skipped");
+      continue;
+    }
     if (boundaryKw && row.some((c) => c.trim() === boundaryKw)) {
       kinds.push("boundary");
       pastBoundary = true;
       continue;
     }
-    if (previewSkips.length > 0 && descIdx >= 0) {
-      const desc = (row[descIdx] ?? "").toLowerCase();
-      if (previewSkips.some((p) => desc.includes(p))) {
+    if (descIdx >= 0) {
+      const desc = (row[descIdx] ?? "").trim();
+      if (cutoffSkips.some((p) => matchesSkip(desc, p))) {
+        pastCutoff = true;
+        kinds.push("skipped");
+        continue;
+      }
+      if (normalSkips.some((p) => matchesSkip(desc, p))) {
         kinds.push("skipped");
         continue;
       }
@@ -574,7 +601,7 @@ function CreateWizard({ onDone }: { onDone: () => void }) {
                 setPreviewSkips(
                   skipPatterns
                     .split(",")
-                    .map((s) => s.trim().toLowerCase())
+                    .map((s) => s.trim())
                     .filter(Boolean),
                 )
               }
@@ -586,7 +613,17 @@ function CreateWizard({ onDone }: { onDone: () => void }) {
               className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm"
             />
             <p className="text-xs text-slate-600">
-              Comma-separated descriptions to exclude
+              Comma-separated, case-sensitive. Plain text matches the exact
+              description. Add <span className="text-slate-400">*</span> to
+              match a prefix (e.g.{" "}
+              <span className="text-slate-400">Ers NIC*</span> matches{" "}
+              <em>Ers NIC TP: 1,164.23</em>). Append{" "}
+              <span className="text-slate-400">|</span> to also skip all rows
+              after the match (e.g.{" "}
+              <span className="text-slate-400">
+                Total taxable pay to date*|
+              </span>
+              ).
             </p>
           </div>
 
