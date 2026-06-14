@@ -30,10 +30,16 @@ def _ensure_dirs():
     os.makedirs(TMP_DIR, exist_ok=True)
 
 
-def _get_or_create_account(bank: str, account_number: str, db: Session) -> Account:
-    acc = db.query(Account).filter_by(account_number=account_number).first()
+def _get_or_create_account(
+    bank: str, account_number: str, user_email: str, db: Session
+) -> Account:
+    acc = (
+        db.query(Account)
+        .filter_by(account_number=account_number, user_email=user_email)
+        .first()
+    )
     if not acc:
-        acc = Account(bank=bank, account_number=account_number)
+        acc = Account(bank=bank, account_number=account_number, user_email=user_email)
         db.add(acc)
         db.flush()
     return acc
@@ -189,7 +195,7 @@ def confirm_upload(
         )
 
     bank_name = template.name.lower() if template else "unknown"
-    account = _get_or_create_account(bank_name, body.account_number, db)
+    account = _get_or_create_account(bank_name, body.account_number, current_user, db)
     counts = _persist_transactions(df, account.id, body.preview_token, db)
     db.refresh(account)
 
@@ -254,7 +260,9 @@ async def bulk_upload(
     }
     parsed_year = year if template.year_source == "manual" else None
     skip_patterns = template.skip_patterns or []
-    account = _get_or_create_account(template.name.lower(), account_number, db)
+    account = _get_or_create_account(
+        template.name.lower(), account_number, current_user, db
+    )
 
     _ensure_dirs()
     results: list[BulkFileResult] = []

@@ -43,8 +43,16 @@ class PollResult(BaseModel):
 
 
 @router.get("/", response_model=list[EmailImportOut])
-def list_imports(status: str | None = None, db: Session = Depends(get_db)):
-    q = db.query(EmailImport).order_by(EmailImport.received_at.desc())
+def list_imports(
+    status: str | None = None,
+    current_user: str = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    q = (
+        db.query(EmailImport)
+        .filter_by(user_email=current_user)
+        .order_by(EmailImport.received_at.desc())
+    )
     if status:
         q = q.filter(EmailImport.status == status)
     else:
@@ -75,8 +83,14 @@ def trigger_poll(
 
 
 @router.post("/{import_id}/confirm", response_model=EmailImportOut)
-def confirm_import(import_id: int, db: Session = Depends(get_db)):
-    record = db.get(EmailImport, import_id)
+def confirm_import(
+    import_id: int,
+    current_user: str = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    record = (
+        db.query(EmailImport).filter_by(id=import_id, user_email=current_user).first()
+    )
     if not record:
         raise HTTPException(status_code=404, detail="Import not found")
     if record.status != "pending":
@@ -88,9 +102,9 @@ def confirm_import(import_id: int, db: Session = Depends(get_db)):
 
     try:
         if record.import_type == "payslip":
-            _confirm_payslip(record, db)
+            _confirm_payslip(record, current_user, db)
         elif record.import_type == "bank_statement":
-            _confirm_bank_statement(record, db)
+            _confirm_bank_statement(record, current_user, db)
         else:
             raise HTTPException(status_code=422, detail="Unknown import type")
     except HTTPException:
@@ -107,8 +121,14 @@ def confirm_import(import_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/{import_id}/skip", response_model=EmailImportOut)
-def skip_import(import_id: int, db: Session = Depends(get_db)):
-    record = db.get(EmailImport, import_id)
+def skip_import(
+    import_id: int,
+    current_user: str = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    record = (
+        db.query(EmailImport).filter_by(id=import_id, user_email=current_user).first()
+    )
     if not record:
         raise HTTPException(status_code=404, detail="Import not found")
     record.status = "skipped"
@@ -119,9 +139,15 @@ def skip_import(import_id: int, db: Session = Depends(get_db)):
 
 
 @router.delete("/{import_id}", response_model=EmailImportOut)
-def dismiss_import(import_id: int, db: Session = Depends(get_db)):
+def dismiss_import(
+    import_id: int,
+    current_user: str = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     """Soft-delete: marks as dismissed so it's hidden and won't be re-imported on next poll."""
-    record = db.get(EmailImport, import_id)
+    record = (
+        db.query(EmailImport).filter_by(id=import_id, user_email=current_user).first()
+    )
     if not record:
         raise HTTPException(status_code=404, detail="Import not found")
     _cleanup_file(record.file_path)
@@ -134,11 +160,14 @@ def dismiss_import(import_id: int, db: Session = Depends(get_db)):
 # ── Internal helpers ──────────────────────────────────────────────────────────
 
 
-def _confirm_payslip(record: EmailImport, db: Session):
+def _confirm_payslip(record: EmailImport, user_email: str, db: Session):
     d = record.raw_data
     ni = d.get("ni_number") or None
 
-    dup_q = db.query(Salary).filter(Salary.date == date.fromisoformat(d["date"]))
+    dup_q = db.query(Salary).filter(
+        Salary.user_email == user_email,
+        Salary.date == date.fromisoformat(d["date"]),
+    )
     if ni:
         dup_q = dup_q.filter(Salary.ni_number == ni)
     else:
@@ -150,6 +179,7 @@ def _confirm_payslip(record: EmailImport, db: Session):
         )
 
     salary = Salary(
+        user_email=user_email,
         date=date.fromisoformat(d["date"]),
         employer=d.get("employer"),
         ni_number=ni,
@@ -174,18 +204,23 @@ def _confirm_payslip(record: EmailImport, db: Session):
         )
 
 
-def _confirm_bank_statement(record: EmailImport, db: Session):
+def _confirm_bank_statement(record: EmailImport, user_email: str, db: Session):
     d = record.raw_data
     account_number = d.get("account_number") or "unknown"
     bank_name = d.get("bank_name") or "unknown"
 
-    acc = db.query(Account).filter_by(account_number=account_number).first()
+    acc = (
+        db.query(Account)
+        .filter_by(user_email=user_email, account_number=account_number)
+        .first()
+    )
     if not acc:
-        acc = Account(bank=bank_name, account_number=account_number)
+        acc = Account(
+            user_email=user_email, bank=bank_name, account_number=account_number
+        )
         db.add(acc)
         db.flush()
 
-    added = 0
     for txn in d.get("transactions", []):
         exists = (
             db.query(Transaction)
@@ -208,7 +243,6 @@ def _confirm_bank_statement(record: EmailImport, db: Session):
                     source_file=record.filename,
                 )
             )
-            added += 1
 
 
 def _cleanup_file(path: str | None):

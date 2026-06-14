@@ -12,14 +12,23 @@ router = APIRouter()
 
 
 @router.get("/ni-numbers")
-def list_ni_numbers(db: Session = Depends(get_db)):
-    """All distinct NI numbers seen in payslips, with their assigned name if set."""
+def list_ni_numbers(
+    current_user: str = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """All distinct NI numbers seen in the current user's payslips, with assigned names."""
     rows = (
-        db.query(distinct(Salary.ni_number)).filter(Salary.ni_number.isnot(None)).all()
+        db.query(distinct(Salary.ni_number))
+        .filter(Salary.user_email == current_user, Salary.ni_number.isnot(None))
+        .all()
     )
     result = []
     for (ni,) in rows:
-        identity = db.query(PersonIdentity).filter_by(ni_number=ni).first()
+        identity = (
+            db.query(PersonIdentity)
+            .filter_by(user_email=current_user, ni_number=ni)
+            .first()
+        )
         result.append(
             {
                 "ni_number": ni,
@@ -32,15 +41,24 @@ def list_ni_numbers(db: Session = Depends(get_db)):
 
 @router.put("/ni-numbers/{ni_number}", response_model=PersonIdentityOut)
 def set_ni_name(
-    ni_number: str, body: PersonIdentityUpdate, db: Session = Depends(get_db)
+    ni_number: str,
+    body: PersonIdentityUpdate,
+    current_user: str = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
     """Create or update the display name for a given NI number."""
-    identity = db.query(PersonIdentity).filter_by(ni_number=ni_number).first()
+    identity = (
+        db.query(PersonIdentity)
+        .filter_by(user_email=current_user, ni_number=ni_number)
+        .first()
+    )
     if identity:
         identity.display_name = body.display_name.strip()
     else:
         identity = PersonIdentity(
-            ni_number=ni_number, display_name=body.display_name.strip()
+            user_email=current_user,
+            ni_number=ni_number,
+            display_name=body.display_name.strip(),
         )
         db.add(identity)
     db.commit()

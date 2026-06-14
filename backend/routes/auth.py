@@ -11,6 +11,8 @@ from jose import JWTError, jwt
 
 from auth import JWT_ALGORITHM, JWT_SECRET, create_token, get_current_user
 
+DEMO_USER = "demo@montrack.app"
+
 router = APIRouter()
 
 _GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
@@ -90,3 +92,10 @@ async def auth_callback(code: str, state: str) -> RedirectResponse:
 @router.get("/me")
 async def auth_me(email: Annotated[str, Depends(get_current_user)]) -> dict[str, str]:
     return {"email": email}
+
+
+@router.get("/demo")
+async def auth_demo() -> RedirectResponse:
+    token = create_token(DEMO_USER)
+    base_url = os.environ.get("BASE_URL", "").rstrip("/")
+    return RedirectResponse(f"{base_url}/auth/callback?token={token}")

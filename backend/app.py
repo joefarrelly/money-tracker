@@ -10,10 +10,12 @@ load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
 
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request
 
-from auth import get_current_user
+from auth import JWT_ALGORITHM, JWT_SECRET, get_current_user
 from database import SessionLocal, init_db
 from routes.accounts import router as accounts_router
 from routes.auth import router as auth_router
@@ -49,6 +51,7 @@ async def _poll_loop():
                         cfg.user_email,
                         cfg.app_password,
                         cfg.label or "INBOX",
+                        cfg.user_email,
                     )
                     if count:
                         logger.info(
@@ -64,9 +67,41 @@ async def _poll_loop():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
+    from demo_seed import seed_demo_data
+
+    seed_demo_data()
     task = asyncio.create_task(_poll_loop())
     yield
     task.cancel()
+
+
+_DEMO_USER = "demo@montrack.app"
+
+
+class _ReadOnlyMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        if request.method not in ("GET", "HEAD", "OPTIONS"):
+            if not request.url.path.startswith("/api/auth/"):
+                auth = request.headers.get("Authorization", "")
+                if auth.startswith("Bearer "):
+                    try:
+                        from jose import jwt as _jwt
+
+                        payload = _jwt.decode(
+                            auth[7:],
+                            JWT_SECRET or "dev-insecure",
+                            algorithms=[JWT_ALGORITHM],
+                        )
+                        if payload.get("sub") == _DEMO_USER:
+                            return JSONResponse(
+                                {
+                                    "detail": "This is a read-only demo — sign in with Google to use the full app."
+                                },
+                                status_code=403,
+                            )
+                    except Exception:
+                        pass
+        return await call_next(request)
 
 
 app = FastAPI(
@@ -82,6 +117,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(_ReadOnlyMiddleware)
 
 _auth_dep = [Depends(get_current_user)]
 

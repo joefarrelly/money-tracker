@@ -5,26 +5,23 @@ from datetime import date
 
 from sqlalchemy.orm import Session
 
-from models import RecurringExpense, Salary, Transaction
+from models import Account, RecurringExpense, Salary, Transaction
 
 
-def monthly_summary(db: Session, year: int, month: int) -> dict:
-    """
-    Return a full monthly breakdown:
-      - total_in / total_out
-      - salary for that month
-      - recurring expenses (active, monthly cost)
-      - disposable income = salary - recurring_total
-      - category breakdown of spending
-    """
+def monthly_summary(db: Session, year: int, month: int, user_email: str) -> dict:
     start = date(year, month, 1)
     end = date(year, month, monthrange(year, month)[1])
+
+    user_account_ids = {
+        row.id for row in db.query(Account.id).filter_by(user_email=user_email).all()
+    }
 
     txns = (
         db.query(Transaction)
         .filter(
             Transaction.date >= start,
             Transaction.date <= end,
+            Transaction.account_id.in_(user_account_ids),
         )
         .all()
     )
@@ -35,6 +32,7 @@ def monthly_summary(db: Session, year: int, month: int) -> dict:
     salary_rows = (
         db.query(Salary)
         .filter(
+            Salary.user_email == user_email,
             Salary.date >= start,
             Salary.date <= end,
         )
@@ -42,7 +40,11 @@ def monthly_summary(db: Session, year: int, month: int) -> dict:
     )
     salary_total = sum(s.net_amount for s in salary_rows)
 
-    recurring = db.query(RecurringExpense).filter_by(is_active=True).all()
+    recurring = (
+        db.query(RecurringExpense)
+        .filter_by(user_email=user_email, is_active=True)
+        .all()
+    )
     recurring_monthly_total = sum(r.monthly_cost for r in recurring)
 
     cat_breakdown = {}
@@ -58,7 +60,6 @@ def monthly_summary(db: Session, year: int, month: int) -> dict:
 
     disposable = salary_total - recurring_monthly_total
 
-    # Recurring actuals — compare each active recurring expense against this month's transactions
     recurring_actuals = []
     for r in recurring:
         matching = [
@@ -131,7 +132,7 @@ def monthly_summary(db: Session, year: int, month: int) -> dict:
     }
 
 
-def trend_summary(db: Session, months: int = 6) -> list[dict]:
+def trend_summary(db: Session, months: int, user_email: str) -> list[dict]:
     """Return monthly summaries for the last N months."""
     from dateutil.relativedelta import relativedelta
 
@@ -139,5 +140,5 @@ def trend_summary(db: Session, months: int = 6) -> list[dict]:
     results = []
     for i in range(months - 1, -1, -1):
         d = today - relativedelta(months=i)
-        results.append(monthly_summary(db, d.year, d.month))
+        results.append(monthly_summary(db, d.year, d.month, user_email))
     return results

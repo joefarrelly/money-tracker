@@ -11,13 +11,23 @@ export default function Login() {
           </p>
         </div>
 
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-8">
+        <div className="bg-slate-900 border border-slate-800 rounded-xl p-8 flex flex-col gap-3">
           <a
             href="/api/auth/google"
             className="flex items-center justify-center gap-3 w-full px-4 py-3 bg-white hover:bg-slate-100 text-slate-900 font-medium rounded-lg transition-colors text-sm"
           >
             <GoogleIcon />
             Sign in with Google
+          </a>
+
+          <a
+            href="/api/auth/demo"
+            className="flex items-center justify-center gap-3 w-full px-4 py-3 bg-slate-800 hover:bg-slate-700 text-slate-300 font-medium rounded-lg transition-colors text-sm border border-slate-700"
+          >
+            Try demo
+            <span className="text-xs text-slate-500 font-normal">
+              read-only
+            </span>
           </a>
         </div>
       </div>

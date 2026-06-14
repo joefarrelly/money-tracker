@@ -2,8 +2,9 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session, joinedload
 
+from auth import get_current_user
 from database import get_db
-from models import Transaction
+from models import Account, Transaction
 from services.transfers import detect_transfers
 
 router = APIRouter()
@@ -18,24 +19,36 @@ class TransferIgnoreRequest(BaseModel):
     txn_id: int
 
 
-# ── Candidates ────────────────────────────────────────────────────────────────
+def _owned_txn(txn_id: int, user_email: str, db: Session) -> Transaction:
+    """Fetch a transaction that belongs to the current user, or 404."""
+    txn = (
+        db.query(Transaction)
+        .join(Account, Transaction.account_id == Account.id)
+        .filter(Transaction.id == txn_id, Account.user_email == user_email)
+        .first()
+    )
+    if not txn:
+        raise HTTPException(status_code=404, detail="Transaction not found")
+    return txn
 
 
 @router.get("/candidates")
-def get_candidates(db: Session = Depends(get_db)):
-    return detect_transfers(db)
-
-
-# ── Confirm a pair ────────────────────────────────────────────────────────────
+def get_candidates(
+    current_user: str = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return detect_transfers(db, current_user)
 
 
 @router.post("/confirm")
-def confirm_transfer(body: TransferConfirmRequest, db: Session = Depends(get_db)):
-    txn_out = db.get(Transaction, body.txn_out_id)
-    txn_in = db.get(Transaction, body.txn_in_id)
+def confirm_transfer(
+    body: TransferConfirmRequest,
+    current_user: str = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    txn_out = _owned_txn(body.txn_out_id, current_user, db)
+    txn_in = _owned_txn(body.txn_in_id, current_user, db)
 
-    if not txn_out or not txn_in:
-        raise HTTPException(status_code=404, detail="Transaction not found")
     if txn_out.account_id == txn_in.account_id:
         raise HTTPException(
             status_code=400, detail="Both transactions are on the same account"
@@ -53,34 +66,30 @@ def confirm_transfer(body: TransferConfirmRequest, db: Session = Depends(get_db)
     return {"ok": True}
 
 
-# ── Ignore (deny candidate) ───────────────────────────────────────────────────
-
-
 @router.post("/ignore")
-def ignore_transfer(body: TransferIgnoreRequest, db: Session = Depends(get_db)):
-    txn = db.get(Transaction, body.txn_id)
-    if not txn:
-        raise HTTPException(status_code=404, detail="Transaction not found")
+def ignore_transfer(
+    body: TransferIgnoreRequest,
+    current_user: str = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    txn = _owned_txn(body.txn_id, current_user, db)
     txn.transfer_ignored = True
     db.commit()
     return {"ok": True}
 
 
-# ── Unlink a confirmed transfer ───────────────────────────────────────────────
-
-
 @router.post("/unlink/{txn_id}")
-def unlink_transfer(txn_id: int, db: Session = Depends(get_db)):
-    txn = db.get(Transaction, txn_id)
-    if not txn:
-        raise HTTPException(status_code=404, detail="Transaction not found")
+def unlink_transfer(
+    txn_id: int,
+    current_user: str = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    txn = _owned_txn(txn_id, current_user, db)
 
-    # Clear the counterpart too
     if txn.transfer_counterpart_id:
-        counterpart = db.get(Transaction, txn.transfer_counterpart_id)
-        if counterpart:
-            counterpart.is_transfer = False
-            counterpart.transfer_counterpart_id = None
+        counterpart = _owned_txn(txn.transfer_counterpart_id, current_user, db)
+        counterpart.is_transfer = False
+        counterpart.transfer_counterpart_id = None
 
     txn.is_transfer = False
     txn.transfer_counterpart_id = None
@@ -88,18 +97,20 @@ def unlink_transfer(txn_id: int, db: Session = Depends(get_db)):
     return {"ok": True}
 
 
-# ── List confirmed transfers ──────────────────────────────────────────────────
-
-
 @router.get("/confirmed")
-def get_confirmed(db: Session = Depends(get_db)):
-    """
-    Returns confirmed transfers as pairs (or singletons for one-sided transfers).
-    Deduplicates pairs so each shows once.
-    """
+def get_confirmed(
+    current_user: str = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    user_account_ids = {
+        row.id for row in db.query(Account.id).filter_by(user_email=current_user).all()
+    }
     confirmed = (
         db.query(Transaction)
-        .filter(Transaction.is_transfer == True)  # noqa: E712
+        .filter(
+            Transaction.is_transfer == True,  # noqa: E712
+            Transaction.account_id.in_(user_account_ids),
+        )
         .options(joinedload(Transaction.account))
         .order_by(Transaction.date.desc())
         .all()
@@ -118,7 +129,6 @@ def get_confirmed(db: Session = Depends(get_db)):
             seen_ids.add(t.transfer_counterpart_id)
             counterpart = db.get(Transaction, t.transfer_counterpart_id)
 
-        # Normalise so txn_out is always the negative side
         txn_out = t if t.amount <= 0 else counterpart
         txn_in = counterpart if t.amount <= 0 else t
 
