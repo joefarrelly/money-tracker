@@ -65,7 +65,7 @@ def list_transactions(
     items = q.offset((page - 1) * per_page).limit(per_page).all()
 
     return TransactionPage(
-        items=items,
+        transactions=items,
         total=total,
         page=page,
         per_page=per_page,

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useAuth } from "../auth";
 import {
   createTemplate,
   deleteTemplate,
@@ -760,12 +761,22 @@ function CreateWizard({
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 export default function Templates() {
+  const { email } = useAuth();
+  const isDemo = email === "demo@montrack.app";
   const [templates, setTemplates] = useState<UserParserTemplate[]>([]);
   const [creating, setCreating] = useState(false);
   const [editingTemplate, setEditingTemplate] =
     useState<UserParserTemplate | null>(null);
   const [deleting, setDeleting] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  function guardDemo() {
+    if (isDemo) {
+      setError("Templates are read-only in the demo account.");
+      return true;
+    }
+    return false;
+  }
 
   async function load() {
     try {
@@ -812,7 +823,9 @@ export default function Templates() {
       <div className="flex items-center justify-between">
         <h1 className="text-lg font-semibold">Parser templates</h1>
         <button
-          onClick={() => setCreating(true)}
+          onClick={() => {
+            if (!guardDemo()) setCreating(true);
+          }}
           className="bg-indigo-600 hover:bg-indigo-500 px-4 py-2 rounded-lg text-sm font-medium transition-colors"
         >
           New template
@@ -829,7 +842,9 @@ export default function Templates() {
             parsed.
           </p>
           <button
-            onClick={() => setCreating(true)}
+            onClick={() => {
+              if (!guardDemo()) setCreating(true);
+            }}
             className="mt-4 bg-indigo-600 hover:bg-indigo-500 px-4 py-2 rounded-lg text-sm font-medium transition-colors"
           >
             Create first template
@@ -868,13 +883,17 @@ export default function Templates() {
               </div>
               <div className="flex items-center gap-3 shrink-0">
                 <button
-                  onClick={() => setEditingTemplate(t)}
+                  onClick={() => {
+                    if (!guardDemo()) setEditingTemplate(t);
+                  }}
                   className="text-sm text-slate-400 hover:text-slate-200 transition-colors"
                 >
                   Edit
                 </button>
                 <button
-                  onClick={() => handleDelete(t.id)}
+                  onClick={() => {
+                    if (!guardDemo()) handleDelete(t.id);
+                  }}
                   disabled={deleting === t.id}
                   className="text-sm text-slate-500 hover:text-red-400 transition-colors disabled:opacity-50"
                 >
