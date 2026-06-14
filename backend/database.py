@@ -27,59 +27,7 @@ def get_db():
 
 
 def init_db():
-    import models  # noqa: F401 — registers all models before create_all
-
-    Base.metadata.create_all(bind=engine)
-    _migrate()
     _seed_default_categories()
-
-
-def _migrate():
-    """Add columns/indexes that exist in the model but are missing from the live DB."""
-    from sqlalchemy import inspect as sa_inspect, text
-
-    migrations = [
-        ("salaries", "source_file", "VARCHAR(255)"),
-        ("salaries", "ni_number", "VARCHAR(20)"),
-        ("transactions", "is_transfer", "BOOLEAN DEFAULT FALSE"),
-        ("transactions", "transfer_counterpart_id", "INTEGER"),
-        ("transactions", "transfer_ignored", "BOOLEAN DEFAULT FALSE"),
-        ("email_imports", "imported_at", "TIMESTAMP"),
-        ("user_parser_templates", "deduction_boundary_keyword", "VARCHAR(100)"),
-        # Multi-tenancy
-        ("accounts", "user_email", "VARCHAR(255)"),
-        ("recurring_expenses", "user_email", "VARCHAR(255)"),
-        ("salaries", "user_email", "VARCHAR(255)"),
-        ("person_identities", "user_email", "VARCHAR(255)"),
-        ("email_imports", "user_email", "VARCHAR(255)"),
-    ]
-    inspector = sa_inspect(engine)
-    with engine.connect() as conn:
-        for table, column, col_type in migrations:
-            existing = {col["name"] for col in inspector.get_columns(table)}
-            if column not in existing:
-                conn.execute(
-                    text(f"ALTER TABLE {table} ADD COLUMN {column} {col_type}")
-                )
-                conn.commit()
-
-        # Drop the old globally-unique constraint on account_number now that it's per-user
-        conn.execute(
-            text(
-                "ALTER TABLE accounts "
-                "DROP CONSTRAINT IF EXISTS accounts_account_number_key"
-            )
-        )
-        conn.commit()
-
-        # Partial unique index: prevent duplicate (date, ni_number) when ni_number is set
-        conn.execute(
-            text(
-                "CREATE UNIQUE INDEX IF NOT EXISTS idx_salary_date_ni "
-                "ON salaries(date, ni_number) WHERE ni_number IS NOT NULL"
-            )
-        )
-        conn.commit()
 
 
 def _seed_default_categories():

@@ -145,7 +145,7 @@ The upload flow is a two-step preview → confirm pattern:
 - `extract_preview(file_path, filename, file_type, template)` — preview with optional template
 - `parse_with_mapping(file_path, mapping, year, skip_patterns, file_type, table_index)` — full parse
 
-Schema migrations for new columns use `_migrate()` in `database.py` (SQLAlchemy `inspect` + ALTER TABLE — no Alembic).
+Schema migrations use Alembic (`backend/migrations/`). To add a column: `alembic revision -m "description"`, write the `upgrade()`/`downgrade()` ops, then `alembic upgrade head`. On the existing production DB, run `alembic stamp 0001` once to mark it as current before deploying.
 
 
 ## Payslip Parsing

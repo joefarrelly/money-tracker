@@ -1,34 +1,18 @@
 # Local dev only. Production service lives in ~/apps/docker-compose.yml on the server.
+# Requires the shared postgres: run `docker compose up -d` from web/ first.
 name: money-tracker
 services:
   web:
     build: .
-    command: uvicorn app:app --host 0.0.0.0 --port 5004
+    command: sh -c "alembic upgrade head && uvicorn app:app --host 0.0.0.0 --port 5004"
     ports:
       - "5004:5004"
     env_file: backend/.env
     environment:
-      - DATABASE_URL=postgresql+psycopg2://money_tracker:money_tracker@db:5432/money_tracker
-    depends_on:
-      db:
-        condition: service_healthy
+      - DATABASE_URL=postgresql+psycopg2://money_tracker:money_tracker@postgres:5432/money_tracker
+    restart: on-failure
 
-  db:
-    image: postgres:17
-    environment:
-      POSTGRES_DB: money_tracker
-      POSTGRES_USER: money_tracker
-      POSTGRES_PASSWORD: money_tracker
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-      - ./docker/init.sql:/docker-entrypoint-initdb.d/init.sql
-    ports:
-      - "5433:5432"
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U money_tracker"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-
-volumes:
-  postgres_data:
+networks:
+  default:
+    name: web
+    external: true
