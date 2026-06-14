@@ -4,6 +4,7 @@ import {
   deleteTemplate,
   extractTables,
   getTemplates,
+  updateTemplate,
 } from "../api/client";
 import type { ColumnRole, ExtractedTable, UserParserTemplate } from "../types";
 
@@ -309,28 +310,80 @@ function ColumnMappingEditor({
   );
 }
 
-// ── Create template wizard ────────────────────────────────────────────────────
+function templateToRoleMap(t: UserParserTemplate): Record<number, ColumnRole> {
+  const map: Record<number, ColumnRole> = {};
+  if (t.description_col != null) map[t.description_col] = "description";
+  if (t.date_description_col != null)
+    map[t.date_description_col] = "date_description";
+  if (t.balance_col != null) map[t.balance_col] = "balance";
+  if (t.date_col != null) map[t.date_col] = "date";
+  if (t.template_type === "payslip") {
+    if (t.amount_col != null) map[t.amount_col] = "amount";
+  } else if (t.amount_style === "signed") {
+    if (t.amount_col != null) map[t.amount_col] = "amount";
+  } else {
+    if (t.money_in_col != null) map[t.money_in_col] = "money_in";
+    if (t.money_out_col != null) map[t.money_out_col] = "money_out";
+  }
+  return map;
+}
+
+// ── Create / Edit template wizard ─────────────────────────────────────────────
 
 type WizardStep = "upload" | "map" | "save";
 
-function CreateWizard({ onDone }: { onDone: () => void }) {
+function makeSyntheticTable(headers: string[]): ExtractedTable {
+  return { index: 0, headers, sample_rows: [], total_rows: 0 };
+}
+
+function CreateWizard({
+  onDone,
+  editingTemplate,
+}: {
+  onDone: () => void;
+  editingTemplate?: UserParserTemplate;
+}) {
+  const isEditing = editingTemplate != null;
   const fileRef = useRef<HTMLInputElement>(null);
 
   const [templateType, setTemplateType] = useState<"statement" | "payslip">(
-    "statement",
+    editingTemplate?.template_type ?? "statement",
   );
-  const [fileType, setFileType] = useState<"pdf" | "csv">("pdf");
-  const [step, setStep] = useState<WizardStep>("upload");
+  const [fileType, setFileType] = useState<"pdf" | "csv">(
+    editingTemplate?.file_type ?? "pdf",
+  );
+  const [step, setStep] = useState<WizardStep>(isEditing ? "map" : "upload");
   const [extracting, setExtracting] = useState(false);
-  const [tables, setTables] = useState<ExtractedTable[]>([]);
-  const [selectedTable, setSelectedTable] = useState(0);
-  const [roleMap, setRoleMap] = useState<Record<number, ColumnRole>>({});
-  const [skipPatterns, setSkipPatterns] = useState("");
-  const [deductionBoundary, setDeductionBoundary] = useState("");
-  const [dateFormat, setDateFormat] = useState("%d %b %Y");
-  const [previewBoundary, setPreviewBoundary] = useState("");
-  const [previewSkips, setPreviewSkips] = useState<string[]>([]);
-  const [name, setName] = useState("");
+
+  // In edit mode, seed tables from stored column headers so the map step is
+  // immediately usable without re-uploading a file.
+  const [tables, setTables] = useState<ExtractedTable[]>(() =>
+    isEditing && editingTemplate.column_headers?.length
+      ? [makeSyntheticTable(editingTemplate.column_headers)]
+      : [],
+  );
+  const [selectedTable, setSelectedTable] = useState(
+    editingTemplate?.table_index ?? 0,
+  );
+  const [roleMap, setRoleMap] = useState<Record<number, ColumnRole>>(
+    isEditing ? templateToRoleMap(editingTemplate) : {},
+  );
+  const [skipPatterns, setSkipPatterns] = useState(
+    editingTemplate?.skip_patterns.join(", ") ?? "",
+  );
+  const [deductionBoundary, setDeductionBoundary] = useState(
+    editingTemplate?.deduction_boundary_keyword ?? "",
+  );
+  const [dateFormat, setDateFormat] = useState(
+    editingTemplate?.date_format ?? "%d %b %Y",
+  );
+  const [previewBoundary, setPreviewBoundary] = useState(
+    editingTemplate?.deduction_boundary_keyword ?? "",
+  );
+  const [previewSkips, setPreviewSkips] = useState<string[]>(
+    editingTemplate?.skip_patterns ?? [],
+  );
+  const [name, setName] = useState(editingTemplate?.name ?? "");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -344,11 +397,23 @@ function CreateWizard({ onDone }: { onDone: () => void }) {
       if (!res.tables.length) throw new Error("No tables found in this file");
       setTables(res.tables);
       setSelectedTable(0);
-      setRoleMap({});
-      setDeductionBoundary("");
-      setDateFormat("%d %b %Y");
-      setPreviewBoundary("");
-      setPreviewSkips([]);
+      if (isEditing) {
+        // Preserve existing column mapping and sync preview state immediately
+        // so the visual classification applies without needing a blur event.
+        setPreviewBoundary(deductionBoundary.trim());
+        setPreviewSkips(
+          skipPatterns
+            .split(",")
+            .map((s) => s.trim())
+            .filter(Boolean),
+        );
+      } else {
+        setRoleMap({});
+        setDeductionBoundary("");
+        setDateFormat("%d %b %Y");
+        setPreviewBoundary("");
+        setPreviewSkips([]);
+      }
       setStep("map");
     } catch (err) {
       setError((err as Error).message);
@@ -377,20 +442,25 @@ function CreateWizard({ onDone }: { onDone: () => void }) {
 
     setSaving(true);
     setError(null);
+    const body = {
+      name: name.trim(),
+      template_type: templateType,
+      file_type: fileType,
+      table_index: selectedTable,
+      column_headers: table.headers,
+      skip_patterns: patterns,
+      deduction_boundary_keyword:
+        templateType === "payslip" && deductionBoundary.trim()
+          ? deductionBoundary.trim()
+          : null,
+      ...mapping,
+    };
     try {
-      await createTemplate({
-        name: name.trim(),
-        template_type: templateType,
-        file_type: fileType,
-        table_index: selectedTable,
-        column_headers: table.headers,
-        skip_patterns: patterns,
-        deduction_boundary_keyword:
-          templateType === "payslip" && deductionBoundary.trim()
-            ? deductionBoundary.trim()
-            : null,
-        ...mapping,
-      });
+      if (isEditing) {
+        await updateTemplate(editingTemplate.id, body);
+      } else {
+        await createTemplate(body);
+      }
       onDone();
     } catch (err) {
       setError((err as Error).message);
@@ -402,7 +472,11 @@ function CreateWizard({ onDone }: { onDone: () => void }) {
   if (step === "upload") {
     return (
       <div className="max-w-lg space-y-5">
-        <h2 className="text-base font-semibold">New template</h2>
+        <h2 className="text-base font-semibold">
+          {isEditing
+            ? `Edit template: ${editingTemplate.name}`
+            : "New template"}
+        </h2>
 
         {/* Type + file type */}
         <div className="bg-slate-900 rounded-xl border border-slate-800 p-4 space-y-4">
@@ -474,17 +548,36 @@ function CreateWizard({ onDone }: { onDone: () => void }) {
   return (
     <div className="space-y-4">
       {/* Header */}
-      <div className="flex items-center gap-3">
-        <button
-          onClick={() => setStep("upload")}
-          className="text-sm text-slate-400 hover:text-slate-200"
-        >
-          ← Back
-        </button>
-        <h2 className="text-base font-semibold">New template</h2>
+      <div className="flex items-center gap-3 flex-wrap">
+        {!isEditing && (
+          <button
+            onClick={() => setStep("upload")}
+            className="text-sm text-slate-400 hover:text-slate-200"
+          >
+            ← Back
+          </button>
+        )}
+        <h2 className="text-base font-semibold">
+          {isEditing
+            ? `Edit template: ${editingTemplate.name}`
+            : "New template"}
+        </h2>
         <span className="text-xs bg-indigo-900/50 text-indigo-300 px-2 py-0.5 rounded-full">
           {templateType === "statement" ? "Bank statement" : "Payslip"}
         </span>
+        {isEditing && (
+          <label className="ml-auto cursor-pointer text-xs text-slate-400 hover:text-slate-200 border border-slate-700 rounded-lg px-3 py-1.5 transition-colors">
+            {extracting ? "Extracting…" : "Upload new sample file"}
+            <input
+              ref={fileRef}
+              type="file"
+              accept={fileType === "pdf" ? ".pdf" : ".csv"}
+              onChange={handleFile}
+              disabled={extracting}
+              className="hidden"
+            />
+          </label>
+        )}
       </div>
 
       {/* Table selector (only shown when multiple tables) */}
@@ -652,7 +745,11 @@ function CreateWizard({ onDone }: { onDone: () => void }) {
             disabled={saving}
             className="w-full bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors"
           >
-            {saving ? "Saving…" : "Save template"}
+            {saving
+              ? "Saving…"
+              : isEditing
+                ? "Update template"
+                : "Save template"}
           </button>
         </div>
       </div>
@@ -665,6 +762,8 @@ function CreateWizard({ onDone }: { onDone: () => void }) {
 export default function Templates() {
   const [templates, setTemplates] = useState<UserParserTemplate[]>([]);
   const [creating, setCreating] = useState(false);
+  const [editingTemplate, setEditingTemplate] =
+    useState<UserParserTemplate | null>(null);
   const [deleting, setDeleting] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -693,12 +792,14 @@ export default function Templates() {
     }
   }
 
-  if (creating) {
+  if (creating || editingTemplate != null) {
     return (
       <div className="space-y-6">
         <CreateWizard
+          editingTemplate={editingTemplate ?? undefined}
           onDone={() => {
             setCreating(false);
+            setEditingTemplate(null);
             load();
           }}
         />
@@ -765,13 +866,21 @@ export default function Templates() {
                     ` · skips: ${t.skip_patterns.join(", ")}`}
                 </p>
               </div>
-              <button
-                onClick={() => handleDelete(t.id)}
-                disabled={deleting === t.id}
-                className="text-sm text-slate-500 hover:text-red-400 transition-colors disabled:opacity-50 shrink-0"
-              >
-                {deleting === t.id ? "…" : "Delete"}
-              </button>
+              <div className="flex items-center gap-3 shrink-0">
+                <button
+                  onClick={() => setEditingTemplate(t)}
+                  className="text-sm text-slate-400 hover:text-slate-200 transition-colors"
+                >
+                  Edit
+                </button>
+                <button
+                  onClick={() => handleDelete(t.id)}
+                  disabled={deleting === t.id}
+                  className="text-sm text-slate-500 hover:text-red-400 transition-colors disabled:opacity-50"
+                >
+                  {deleting === t.id ? "…" : "Delete"}
+                </button>
+              </div>
             </div>
           ))}
         </div>
