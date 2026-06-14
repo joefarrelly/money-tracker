@@ -804,9 +804,51 @@ def parse_with_mapping(
     if skip_patterns:
         active = [p.strip() for p in skip_patterns if p.strip()]
         if active:
-            pattern = "|".join(re.escape(p) for p in active)
-            result = result[
-                ~result["description"].str.contains(pattern, case=False, na=False)
-            ]
+            # Split into cutoff patterns (trailing |) and normal skip patterns.
+            # * in the pattern → glob match; otherwise exact match (case-sensitive).
+            normal = [p for p in active if not p.endswith("|")]
+            cutoffs = [p[:-1] for p in active if p.endswith("|")]
+
+            def _build_mask(pats: list[str]) -> pd.Series:
+                exact = [p for p in pats if "*" not in p]
+                globs = [p for p in pats if "*" in p]
+                m = pd.Series(False, index=result.index)
+                if exact:
+                    exact_re = re.compile(
+                        "|".join(f"(?:{re.escape(p)})" for p in exact)
+                    )
+                    m |= result["description"].apply(
+                        lambda x: (
+                            bool(exact_re.fullmatch(str(x).strip()))
+                            if pd.notna(x)
+                            else False
+                        )
+                    )
+                if globs:
+                    glob_re = re.compile(
+                        "|".join(
+                            "(?:" + re.escape(p).replace(r"\*", ".*") + ")"
+                            for p in globs
+                        )
+                    )
+                    m |= result["description"].apply(
+                        lambda x: (
+                            bool(glob_re.fullmatch(str(x).strip()))
+                            if pd.notna(x)
+                            else False
+                        )
+                    )
+                return m
+
+            # Apply cutoff: find first matching row, drop it and everything after.
+            if cutoffs:
+                cutoff_mask = _build_mask(cutoffs)
+                cutoff_hits = result.index[cutoff_mask]
+                if len(cutoff_hits) > 0:
+                    result = result.loc[: cutoff_hits[0] - 1]
+
+            # Apply normal skips.
+            if normal and not result.empty:
+                result = result[~_build_mask(normal)]
 
     return result

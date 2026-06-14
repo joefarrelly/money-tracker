@@ -110,7 +110,9 @@ Redirect URIs to register in Google Cloud Console: `{BASE_URL}/api/auth/callback
 GET responses are cached in memory for 60 seconds keyed by URL. Any non-GET request via `request()` clears the whole cache. Raw fetch upload functions (`uploadPayslip`, `bulkUploadPayslips`, `bulkUpload`) also call `cache.clear()` on success. Export `invalidateCache()` for manual clearing if needed.
 
 ## Parser Templates
-`UserParserTemplate` model: `user_email`, `name`, `template_type` ("statement"/"payslip"), `file_type` ("pdf"/"csv"), `table_index`, column role assignments (same fields as `ColumnMapping`), `skip_patterns` (JSON list of description substrings to exclude), `deduction_boundary_keyword` (payslip only — exact cell value that marks the start of the deductions section, case-sensitive).
+`UserParserTemplate` model: `user_email`, `name`, `template_type` ("statement"/"payslip"), `file_type` ("pdf"/"csv"), `table_index`, column role assignments (same fields as `ColumnMapping`), `skip_patterns` (JSON list of patterns to exclude rows — see matching rules below), `deduction_boundary_keyword` (payslip only — exact cell value that marks the start of the deductions section, case-sensitive).
+
+**Skip pattern matching (case-sensitive):** plain text = exact description match; append `*` for glob/prefix match (e.g. `Ers NIC*` matches `Ers NIC TP: 1,164.23`); append `|` to skip that row and all rows after it (e.g. `Total taxable pay to date*|`). `*` and `|` can be combined.
 
 Templates are strictly per-user. The old built-in Barclays/Chase `StatementFormat` seeding has been removed; users create their own templates via the Templates page.
 
@@ -145,7 +147,7 @@ Schema migrations for new columns use `_migrate()` in `database.py` (SQLAlchemy 
 `POST /api/salaries/upload-payslip` — requires `template_id` Form field (no fallback).
 `POST /api/salaries/bulk-upload-payslips` — requires `template_id` Form field.
 
-**NordHealth template settings:** table 0, description col 0, amount col 3 (the AMOUNT column), deduction boundary keyword `TOTAL`, skip patterns: `Ers NIC, Ers Pension, Tax District, Tax Reference, Tax:, NET PAY, Total taxable pay to date`.
+**NordHealth template settings:** table 0, description col 0, amount col 3 (the AMOUNT column), deduction boundary keyword `TOTAL`, skip patterns: `Ers NIC*, Ers Pension*, Tax District*, Tax Reference*, Tax:*, NET PAY, Total taxable pay to date*|`.
 
 ## Settings
 `GET/PUT /api/settings/ni-numbers` — lists all NI numbers seen in payslips, create/update display name.
