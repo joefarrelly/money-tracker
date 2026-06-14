@@ -300,19 +300,20 @@ def parse_payslip_with_template(filepath: str, template) -> dict:
     for _, row in data_rows.iterrows():
         if past_cutoff:
             continue
+
+        # Boundary check before desc filtering so boundary rows with an empty
+        # description column (e.g. "TOTAL" in col 2, blank col 0) are detected.
+        if boundary_kw and any(
+            str(row.iloc[i]).strip() == boundary_kw for i in range(len(row))
+        ):
+            past_boundary = True
+            continue
+
         try:
             desc = str(row.iloc[desc_col]).strip()
         except (IndexError, KeyError):
             continue
         if not desc or desc in ("nan", ""):
-            continue
-
-        # Boundary row: any cell in the row matches exactly (case-sensitive).
-        # Exact match avoids false positives like "Total taxable pay to date".
-        if boundary_kw and any(
-            str(row.iloc[i]).strip() == boundary_kw for i in range(len(row))
-        ):
-            past_boundary = True
             continue
 
         if _cutoff_skips and _skip_match(desc, _cutoff_skips):
