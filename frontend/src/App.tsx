@@ -1,4 +1,5 @@
 import { Routes, Route, NavLink } from "react-router-dom";
+import { AuthProvider, useAuth } from "./auth";
 import Dashboard from "./pages/Dashboard";
 import Transactions from "./pages/Transactions";
 import Recurring from "./pages/Recurring";
@@ -7,6 +8,8 @@ import Salaries from "./pages/Salaries";
 import Upload from "./pages/Upload";
 import Settings from "./pages/Settings";
 import EmailImports from "./pages/EmailImports";
+import Login from "./pages/Login";
+import AuthCallback from "./pages/AuthCallback";
 
 const navItems = [
   { to: "/", label: "Dashboard" },
@@ -19,7 +22,18 @@ const navItems = [
   { to: "/settings", label: "Settings" },
 ];
 
-export default function App() {
+function AuthedApp() {
+  const { token, email, logout } = useAuth();
+
+  if (!token) {
+    return (
+      <Routes>
+        <Route path="/auth/callback" element={<AuthCallback />} />
+        <Route path="*" element={<Login />} />
+      </Routes>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100">
       <nav className="sticky top-0 z-10 bg-slate-900/95 backdrop-blur-sm border-b border-slate-800 px-6 py-3 flex items-center gap-1">
@@ -40,6 +54,15 @@ export default function App() {
             {label}
           </NavLink>
         ))}
+        <div className="ml-auto flex items-center gap-3">
+          <span className="text-slate-500 text-xs">{email}</span>
+          <button
+            onClick={logout}
+            className="text-slate-400 hover:text-slate-200 text-sm px-3 py-1.5 rounded-md hover:bg-slate-800 transition-colors"
+          >
+            Sign out
+          </button>
+        </div>
       </nav>
 
       <main className="px-6 py-6 max-w-7xl mx-auto">
@@ -52,8 +75,17 @@ export default function App() {
           <Route path="/upload" element={<Upload />} />
           <Route path="/email-imports" element={<EmailImports />} />
           <Route path="/settings" element={<Settings />} />
+          <Route path="/auth/callback" element={<AuthCallback />} />
         </Routes>
       </main>
     </div>
+  );
+}
+
+export default function App() {
+  return (
+    <AuthProvider>
+      <AuthedApp />
+    </AuthProvider>
   );
 }

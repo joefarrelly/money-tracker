@@ -46,10 +46,14 @@ Runs on `http://localhost:5173`, proxies `/api` to the backend.
 ```
 backend/
   app.py            # FastAPI app, registers routers, startup hook
+  auth.py           # JWT create/decode, get_current_user FastAPI dependency
   models.py         # SQLAlchemy models (DeclarativeBase)
   schemas.py        # Pydantic request/response models
   database.py       # Engine, SessionLocal, get_db dependency, DB init + seeding
-  routes/           # APIRouters: accounts, transactions, upload, salaries, categories, dashboard, settings, transfers, email_imports
+  routes/
+    auth.py         # GET /api/auth/google, GET /api/auth/callback, GET /api/auth/me
+    accounts, transactions, upload, salaries, categories, dashboard,
+    settings, transfers, email_imports  # all protected by get_current_user
   parsers/
     universal.py    # Universal PDF parser: table extraction, column-role heuristics,
                     #   format matching, preview + confirm flow (replaces barclays.py/chase.py)
@@ -61,9 +65,12 @@ backend/
 ### Frontend structure
 ```
 frontend/src/
-  pages/            # Dashboard, Transactions, Upload, Recurring, Salaries, Settings, Transfers, EmailImports
+  auth.tsx          # AuthProvider + useAuth hook; token stored in localStorage
+  pages/            # Dashboard, Transactions, Upload, Recurring, Salaries, Settings, Transfers,
+                    #   EmailImports, Login, AuthCallback
   components/       # Shared components: Spinner
-  api/client.ts     # fetch wrapper with 60s GET cache + auto-invalidate on mutations
+  api/client.ts     # fetch wrapper with 60s GET cache + auto-invalidate on mutations;
+                    #   attaches Authorization: Bearer header; clears token + redirects on 401
   types/index.ts    # Shared TypeScript types
 ```
 
@@ -74,6 +81,20 @@ frontend/src/
 - **Accent:** indigo/violet — nav active state, buttons, spinner, gradient on logo
 - **Stat cards:** coloured left border per meaning — emerald (salary), red (spent), sky (net flow), violet (savings rate)
 - **Nav:** sticky, `slate-900/95` with backdrop blur; active item is indigo pill
+
+## Authentication
+Google SSO via OAuth 2.0. No anonymous mode — all routes require a valid JWT.
+
+**Flow:** `GET /api/auth/google` → Google consent → `GET /api/auth/callback?code=&state=` → exchanges code for access token, fetches email from userinfo, issues a 30-day JWT → redirects to `{BASE_URL}/auth/callback?token=<jwt>` → frontend stores token in `localStorage`.
+
+**JWT:** Signed with `JWT_SECRET` env var using HS256. `get_current_user` dependency (`backend/auth.py`) verifies it and returns the email. Applied at router-include level in `app.py` — all API routers except `/api/auth/*` require it.
+
+**CSRF:** OAuth `state` param is itself a short-lived (10 min) JWT signed with `JWT_SECRET` — no server-side session needed.
+
+**Frontend:** `AuthProvider` reads token from `localStorage`; unauthenticated users see `Login` for all routes; `AuthCallback` page handles the post-OAuth redirect and stores the token. All `fetch` calls (including raw FormData uploads) attach `Authorization: Bearer` from localStorage. 401 responses clear the token and hard-redirect to `/`.
+
+**Required env vars:** `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `BASE_URL`, `JWT_SECRET`.
+Redirect URIs to register in Google Cloud Console: `{BASE_URL}/api/auth/callback`.
 
 ## Key Decisions
 - Transactions use a unified `amount` field: positive = money in, negative = money out.
