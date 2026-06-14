@@ -13,7 +13,7 @@ from collections import defaultdict
 
 from sqlalchemy.orm import Session
 
-from models import RecurringExpense, Transaction
+from models import Account, RecurringExpense, Transaction
 
 
 def _normalise_merchant(description: str) -> str:
@@ -26,14 +26,22 @@ def _normalise_merchant(description: str) -> str:
     return " ".join(words[:4])
 
 
-def detect_recurring(db: Session, min_occurrences: int = 3) -> list[dict]:
+def detect_recurring(
+    db: Session, user_email: str, min_occurrences: int = 3
+) -> list[dict]:
     """
-    Analyse all stored transactions and return a list of recurring expense candidates.
+    Analyse transactions for the given user and return recurring expense candidates.
     Only considers outgoing transactions (amount < 0).
     """
+    user_account_ids = [
+        row.id for row in db.query(Account.id).filter_by(user_email=user_email).all()
+    ]
     txns = (
         db.query(Transaction)
-        .filter(Transaction.amount < 0)
+        .filter(
+            Transaction.amount < 0,
+            Transaction.account_id.in_(user_account_ids),
+        )
         .order_by(Transaction.date)
         .all()
     )
@@ -90,18 +98,18 @@ def detect_recurring(db: Session, min_occurrences: int = 3) -> list[dict]:
     return candidates
 
 
-def sync_recurring_to_db(db: Session) -> dict:
+def sync_recurring_to_db(db: Session, user_email: str) -> dict:
     """
-    Run detection and upsert confirmed recurring expenses into the DB.
+    Run detection and upsert confirmed recurring expenses into the DB for the given user.
     Returns counts of created/updated/skipped.
     """
-    candidates = detect_recurring(db)
+    candidates = detect_recurring(db, user_email)
     created = updated = skipped = 0
 
     for c in candidates:
         existing = (
             db.query(RecurringExpense)
-            .filter_by(merchant_pattern=c["merchant_pattern"])
+            .filter_by(user_email=user_email, merchant_pattern=c["merchant_pattern"])
             .first()
         )
 
@@ -116,6 +124,7 @@ def sync_recurring_to_db(db: Session) -> dict:
         else:
             db.add(
                 RecurringExpense(
+                    user_email=user_email,
                     merchant_pattern=c["merchant_pattern"],
                     typical_amount=c["typical_amount"],
                     frequency=c["frequency"],

@@ -2,15 +2,15 @@ import os
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, DeclarativeBase
 
-BASE_DIR = os.path.abspath(os.path.dirname(__file__))
-DATABASE_URL = os.environ.get(
-    "DATABASE_URL", f"sqlite:///{os.path.join(BASE_DIR, 'money_tracker.db')}"
-)
+_raw_url = os.environ.get("DATABASE_URL")
+if not _raw_url:
+    raise RuntimeError(
+        "DATABASE_URL is not set. "
+        "Run via Docker ('docker compose up') or set DATABASE_URL in backend/.env."
+    )
 
-_connect_args = (
-    {"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}
-)
-engine = create_engine(DATABASE_URL, connect_args=_connect_args)
+DATABASE_URL = _raw_url
+engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 
@@ -32,21 +32,26 @@ def init_db():
     Base.metadata.create_all(bind=engine)
     _migrate()
     _seed_default_categories()
-    _seed_builtin_formats()
 
 
 def _migrate():
-    """Add columns that exist in the model but are missing from the live DB."""
+    """Add columns/indexes that exist in the model but are missing from the live DB."""
     from sqlalchemy import inspect as sa_inspect, text
 
     migrations = [
-        ("statement_formats", "date_description_col", "INTEGER"),
         ("salaries", "source_file", "VARCHAR(255)"),
         ("salaries", "ni_number", "VARCHAR(20)"),
         ("transactions", "is_transfer", "BOOLEAN DEFAULT FALSE"),
         ("transactions", "transfer_counterpart_id", "INTEGER"),
         ("transactions", "transfer_ignored", "BOOLEAN DEFAULT FALSE"),
         ("email_imports", "imported_at", "TIMESTAMP"),
+        ("user_parser_templates", "deduction_boundary_keyword", "VARCHAR(100)"),
+        # Multi-tenancy
+        ("accounts", "user_email", "VARCHAR(255)"),
+        ("recurring_expenses", "user_email", "VARCHAR(255)"),
+        ("salaries", "user_email", "VARCHAR(255)"),
+        ("person_identities", "user_email", "VARCHAR(255)"),
+        ("email_imports", "user_email", "VARCHAR(255)"),
     ]
     inspector = sa_inspect(engine)
     with engine.connect() as conn:
@@ -58,6 +63,15 @@ def _migrate():
                 )
                 conn.commit()
 
+        # Drop the old globally-unique constraint on account_number now that it's per-user
+        conn.execute(
+            text(
+                "ALTER TABLE accounts "
+                "DROP CONSTRAINT IF EXISTS accounts_account_number_key"
+            )
+        )
+        conn.commit()
+
         # Partial unique index: prevent duplicate (date, ni_number) when ni_number is set
         conn.execute(
             text(
@@ -66,59 +80,6 @@ def _migrate():
             )
         )
         conn.commit()
-
-
-def _seed_builtin_formats():
-    from models import StatementFormat
-
-    db = SessionLocal()
-    try:
-        builtin = [
-            {
-                "name": "Barclays",
-                "column_headers": [
-                    "Date",
-                    "Description",
-                    "Money out",
-                    "Money in",
-                    "Balance",
-                ],
-                "date_col": 0,
-                "description_col": 1,
-                "money_out_col": 2,
-                "money_in_col": 3,
-                "balance_col": 4,
-                "amount_col": None,
-                "amount_style": "split",
-                "date_format": "%d %b",
-                "year_source": "detect",
-                "is_builtin": True,
-            },
-            {
-                "name": "Chase",
-                "column_headers": ["Date", "Transaction details", "Amount", "Balance"],
-                "date_col": 0,
-                "description_col": 1,
-                "amount_col": 2,
-                "money_in_col": None,
-                "money_out_col": None,
-                "balance_col": 3,
-                "amount_style": "signed",
-                "date_format": "%d %b %Y",
-                "year_source": "inline",
-                "is_builtin": True,
-            },
-        ]
-        for fmt_data in builtin:
-            if (
-                not db.query(StatementFormat)
-                .filter_by(name=fmt_data["name"], is_builtin=True)
-                .first()
-            ):
-                db.add(StatementFormat(**fmt_data))
-        db.commit()
-    finally:
-        db.close()
 
 
 def _seed_default_categories():

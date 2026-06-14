@@ -3,9 +3,9 @@
 Live at [montrack.fazz.uk](https://montrack.fazz.uk).
 
 ## Project Overview
-Personal finance tracker that consolidates:
-- Bank statement PDF uploads (Barclays, Chase)
-- Payslip PDF uploads (NordHealth / Provet Cloud format) with full line-item breakdown
+Multi-user personal finance tracker. Each Google account sees only its own data. Consolidates:
+- Bank statement PDF/CSV uploads with user-defined parser templates
+- Payslip PDF uploads with user-defined parser templates
 - Auto-detected recurring expenses with category assignment
 - Disposable income calculation (salary net − recurring costs)
 - Transfer detection to exclude internal movements from totals
@@ -23,6 +23,11 @@ docker compose up --build
 Runs on `http://localhost:5004`. Builds the React frontend and serves it from FastAPI.
 
 **Without Docker:**
+
+Requires a local PostgreSQL instance. Add `DATABASE_URL` to `backend/.env`:
+```
+DATABASE_URL=postgresql+psycopg2://user:pass@localhost:5432/money_tracker
+```
 
 Backend (from `backend/`):
 ```bash
@@ -46,14 +51,20 @@ Runs on `http://localhost:5173`, proxies `/api` to the backend.
 ```
 backend/
   app.py            # FastAPI app, registers routers, startup hook
+  auth.py           # JWT create/decode, get_current_user FastAPI dependency
   models.py         # SQLAlchemy models (DeclarativeBase)
   schemas.py        # Pydantic request/response models
   database.py       # Engine, SessionLocal, get_db dependency, DB init + seeding
-  routes/           # APIRouters: accounts, transactions, upload, salaries, categories, dashboard, settings, transfers, email_imports
+  demo_seed.py      # seeds realistic data for demo@montrack.app on every startup (idempotent)
+  routes/
+    auth.py         # GET /api/auth/google, GET /api/auth/callback, GET /api/auth/me,
+                    #   GET /api/auth/demo (issues JWT for demo@montrack.app, always available)
+    accounts, transactions, upload, salaries, categories, dashboard,
+    settings, transfers, email_imports, templates  # all protected by get_current_user
   parsers/
-    universal.py    # Universal PDF parser: table extraction, column-role heuristics,
-                    #   format matching, preview + confirm flow (replaces barclays.py/chase.py)
-    payslip.py      # Payslip PDF parser: handles 3 table layouts, extracts line items + NI number
+    universal.py    # Universal PDF/CSV parser: table extraction, column-role heuristics,
+                    #   template-guided or auto-detect preview + confirm flow
+    payslip.py      # Payslip PDF parser: template-based path only (NordHealth heuristics removed)
   services/         # recurring.py (auto-detection), summary.py (monthly summary + disposable income),
                     #   transfers.py (transfer candidate detection), email_poller.py (Gmail IMAP polling)
 ```
@@ -61,9 +72,12 @@ backend/
 ### Frontend structure
 ```
 frontend/src/
-  pages/            # Dashboard, Transactions, Upload, Recurring, Salaries, Settings, Transfers, EmailImports
+  auth.tsx          # AuthProvider + useAuth hook; token stored in localStorage
+  pages/            # Dashboard, Transactions, Upload, Recurring, Salaries, Settings, Transfers,
+                    #   EmailImports, Templates, Login, AuthCallback
   components/       # Shared components: Spinner
-  api/client.ts     # fetch wrapper with 60s GET cache + auto-invalidate on mutations
+  api/client.ts     # fetch wrapper with 60s GET cache + auto-invalidate on mutations;
+                    #   attaches Authorization: Bearer header; clears token + redirects on 401
   types/index.ts    # Shared TypeScript types
 ```
 
@@ -75,42 +89,85 @@ frontend/src/
 - **Stat cards:** coloured left border per meaning — emerald (salary), red (spent), sky (net flow), violet (savings rate)
 - **Nav:** sticky, `slate-900/95` with backdrop blur; active item is indigo pill
 
+## Authentication
+Google SSO via OAuth 2.0. All routes require a valid JWT. A read-only demo account is always available.
+
+**Google flow:** `GET /api/auth/google` → Google consent → `GET /api/auth/callback?code=&state=` → exchanges code for access token, fetches email from userinfo, issues a 30-day JWT → redirects to `{BASE_URL}/auth/callback?token=<jwt>` → frontend stores token in `localStorage`.
+
+**Demo flow:** `GET /api/auth/demo` → issues a JWT for `demo@montrack.app` → same redirect. The demo user's data is seeded on startup (`demo_seed.py`). All mutation endpoints return 403 for this user (middleware in `app.py` decodes the JWT and checks the email). Login page always shows a "Try demo" button.
+
+**JWT:** Signed with `JWT_SECRET` env var using HS256. `get_current_user` dependency (`backend/auth.py`) verifies it and returns the email. Applied at router-include level in `app.py` — all API routers except `/api/auth/*` require it.
+
+**CSRF:** OAuth `state` param is itself a short-lived (10 min) JWT signed with `JWT_SECRET` — no server-side session needed.
+
+**Frontend:** `AuthProvider` reads token from `localStorage`; unauthenticated users see `Login` for all routes; `AuthCallback` page handles the post-OAuth redirect and stores the token. All `fetch` calls (including raw FormData uploads) attach `Authorization: Bearer` from localStorage. 401 responses clear the token and hard-redirect to `/`. Logout also hard-redirects to `/` to clear the URL. Nav shows a "Demo · read-only" badge when email is `demo@montrack.app`.
+
+**Required env vars:** `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `BASE_URL`, `JWT_SECRET`.
+Redirect URIs to register in Google Cloud Console: `{BASE_URL}/api/auth/callback`.
+
 ## Key Decisions
+- **Multi-tenancy:** `Account`, `RecurringExpense`, `Salary`, `PersonIdentity`, `EmailImport` all have a `user_email` column. Transactions are scoped via their account's `user_email` (join — no direct column). Categories are global/shared. All service functions (`summary`, `recurring`, `transfers`) take `user_email` and filter accordingly.
+- `Account.account_number` is no longer globally unique — two users can hold accounts with the same number. Uniqueness is enforced by scoping all account lookups to `(user_email, account_number)`.
 - Transactions use a unified `amount` field: positive = money in, negative = money out.
 - Duplicate detection on upload: `(account_id, date, description, amount)` tuple.
 - Recurring detection: merchant normalisation + monthly cadence (20–40 day gaps, <20% amount variance, 3+ occurrences).
 - Disposable income = net salary − sum of active recurring expense monthly costs.
-- Payslip entry is upload-only (no manual form). Single: `POST /api/salaries/upload-payslip`. Bulk: `POST /api/salaries/bulk-upload-payslips`.
+- Payslip entry is upload-only (no manual form). Both `POST /api/salaries/upload-payslip` and `POST /api/salaries/bulk-upload-payslips` require a `template_id` — there is no built-in fallback parser.
 - Payslip duplicate detection: `(date, ni_number)` at app level + partial unique DB index `WHERE ni_number IS NOT NULL`.
-- NI number is the per-person identity key for payslips (supports multiple people, e.g. partners). Mapped to display names via `PersonIdentity` in Settings.
+- NI number is the per-person identity key for payslips (supports multiple people, e.g. partners). Mapped to display names via `PersonIdentity` in Settings (scoped per user).
 - Transfer detection: transactions flagged `is_transfer=True` are excluded from monthly totals and category breakdowns so they don't inflate income/spending.
 
 ## API Response Cache (`api/client.ts`)
 GET responses are cached in memory for 60 seconds keyed by URL. Any non-GET request via `request()` clears the whole cache. Raw fetch upload functions (`uploadPayslip`, `bulkUploadPayslips`, `bulkUpload`) also call `cache.clear()` on success. Export `invalidateCache()` for manual clearing if needed.
 
-## PDF Parsing
+## Parser Templates
+`UserParserTemplate` model: `user_email`, `name`, `template_type` ("statement"/"payslip"), `file_type` ("pdf"/"csv"), `table_index`, column role assignments (same fields as `ColumnMapping`), `skip_patterns` (JSON list of patterns to exclude rows — see matching rules below), `deduction_boundary_keyword` (payslip only — exact cell value that marks the start of the deductions section, case-sensitive).
+
+**Skip pattern matching (case-sensitive):** plain text = exact description match; append `*` for glob/prefix match (e.g. `Ers NIC*` matches `Ers NIC TP: 1,164.23`); append `|` to skip that row and all rows after it (e.g. `Total taxable pay to date*|`). `*` and `|` can be combined.
+
+Templates are strictly per-user. The old built-in Barclays/Chase `StatementFormat` seeding has been removed; users create their own templates via the Templates page.
+
+`routes/templates.py` exposes:
+- `GET /api/templates/` — list user's templates (optional `?template_type=` filter)
+- `POST /api/templates/` — create template
+- `PUT /api/templates/{id}` — update template
+- `DELETE /api/templates/{id}` — delete template
+- `POST /api/templates/extract-tables` — upload a sample file, returns all extracted tables (all rows, not just samples) for use in the template editor UI
+
+## PDF/CSV Parsing
 The upload flow is a two-step preview → confirm pattern:
-1. `POST /api/upload/preview` — saves temp file, extracts tables via camelot, scores column roles, tries to match a saved `StatementFormat`, returns a `PreviewResponse` with `preview_token`.
-2. `POST /api/upload/confirm` — loads temp file by token, calls `parse_with_mapping` with the confirmed mapping, persists transactions, optionally saves the format for reuse.
+1. `POST /api/upload/preview` — saves temp file, accepts optional `template_id`. If template provided: extracts the table at `template.table_index` and applies its column mapping. If no template: auto-detects table + infers column roles. Returns `PreviewResponse` with `preview_token`.
+2. `POST /api/upload/confirm` — loads temp file by token, parses with the confirmed mapping and `skip_patterns`, persists transactions.
+3. `POST /api/upload/bulk` — same as confirm but for multiple files at once; requires `template_id`.
 
-The universal parser (`parsers/universal.py`) handles all banks. It scores tables by header quality × column efficiency to find the transaction table, then infers column roles (date, description, amount, money_in/out, balance). `total_rows` in the preview reflects the count across all matching pages, not just the first.
+`parsers/universal.py` supports both PDF (camelot) and CSV (pandas). Key public functions:
+- `extract_all_tables(file_path, file_type)` — returns all raw tables without heuristics (used by template editor)
+- `extract_preview(file_path, filename, file_type, template)` — preview with optional template
+- `parse_with_mapping(file_path, mapping, year, skip_patterns, file_type, table_index)` — full parse
 
-The original bank-specific parsing logic is in `C:/Users/Joe/Desktop/App/personal/ScrapeBanks/bank_app.py` (`process_barclays_pdf`, `process_chase_pdf`) — kept as reference but no longer used directly.
+Schema migrations for new columns use `_migrate()` in `database.py` (SQLAlchemy `inspect` + ALTER TABLE — no Alembic).
 
-## StatementFormats
-Built-in formats for Barclays and Chase are seeded on startup. User-defined formats are saved when "Save this format" is checked on confirm. `use_count` is bumped on each successful import. Schema migrations for new columns use `_migrate()` in `database.py` (SQLAlchemy `inspect` + ALTER TABLE — no Alembic).
 
 ## Payslip Parsing
-`parsers/payslip.py` handles NordHealth / Provet Cloud payslips using camelot stream flavor (no Ghostscript needed). Handles 3 PDF layouts that this payroll system produces:
-- 5-column: Description | Rate | Units Due | Amount | This Year
-- 4-column: Description | Rate/Units (merged) | Amount | This Year
-- 4-column merged: Description | Rate | Units | Amount+ThisYear (merged cell, split on `\n`)
+`parsers/payslip.py` has one path: `parse_payslip_with_template(filepath, template)`.
+- Uses `template.table_index`, `description_col`, `amount_col`, `skip_patterns`.
+- Line type: if `template.deduction_boundary_keyword` is set, rows after a row where any cell exactly equals that keyword (case-sensitive) are deductions; otherwise inferred from sign (positive = earning, negative = deduction).
+- The boundary row itself is excluded from line items.
+- Best-effort date/NI extraction from raw PDF text via PyPDF2.
+- `parse_payslip_pdf` (NordHealth heuristics) has been removed.
 
-NI number extracted from "NI Letter & No: A PB175845B" — strips the leading category letter, stores just the NI number (`PB175845B`). Earnings appear before the TOTAL row; deductions after.
+`POST /api/salaries/upload-payslip` — requires `template_id` Form field (no fallback).
+`POST /api/salaries/bulk-upload-payslips` — requires `template_id` Form field.
+
+**NordHealth template settings:** table 0, description col 0, amount col 3 (the AMOUNT column), deduction boundary keyword `TOTAL`, skip patterns: `Ers NIC*, Ers Pension*, Tax District*, Tax Reference*, Tax:*, NET PAY, Total taxable pay to date*|`.
 
 ## Settings
 `GET/PUT /api/settings/ni-numbers` — lists all NI numbers seen in payslips, create/update display name.
 Accounts already have nickname support via `PATCH /api/accounts/{id}`.
+
+`GET /api/settings/email-config` — returns the current user's email polling config (`configured`, `user_email`, `label`, `enabled`). App password is never returned.
+`PUT /api/settings/email-config` — save or update config (`app_password`, `label`, `enabled`). Keyed by the authenticated user's Google SSO email.
+`DELETE /api/settings/email-config` — remove config, disabling polling for that user.
 
 ## Dashboard Summary API
 `GET /api/dashboard/summary?year=Y&month=M` returns an enriched `MonthlySummary`:
@@ -132,16 +189,20 @@ Currency values are formatted to 2 decimal places throughout the frontend (`toLo
 - **By category** — monthly cost grouped by category with % of salary bars
 
 ## Email Imports
-`services/email_poller.py` polls Gmail via IMAP every 5 minutes (configurable via `EMAIL_POLL_INTERVAL`). Credentials read from env: `GMAIL_ADDRESS`, `GMAIL_APP_PASSWORD`. Attachments (PDFs) are saved to `backend/uploads/email/` and parsed as bank statements or payslips.
+`services/email_poller.py` polls Gmail via IMAP every 5 minutes (configurable via `EMAIL_POLL_INTERVAL`). Credentials are stored per-user in the `UserEmailConfig` DB table (not env vars) — `poll_emails(db, address, password, label)` takes them explicitly. The background `_poll_loop` in `app.py` queries all enabled `UserEmailConfig` rows and polls each one. Attachments (PDFs) are saved to `backend/uploads/email/` and parsed as bank statements or payslips.
 
-`EmailImport` model tracks each polled message: `message_id`, `subject`, `sender`, `received_at`, `filename`, `import_type` (statement/payslip), `status` (pending/imported/error), `error_message`, `raw_data`.
+`UserEmailConfig` model: `user_email` (PK = Google SSO email), `app_password`, `label` (default INBOX), `enabled`. Managed via `GET/PUT/DELETE /api/settings/email-config`.
+
+`EmailImport` model tracks each polled message: `user_email`, `message_id`, `subject`, `sender`, `received_at`, `filename`, `import_type` (statement/payslip), `status` (pending/imported/error), `error_message`, `raw_data`.
 
 `routes/email_imports.py` exposes:
 - `GET /api/email-imports/` — list all import records
-- `POST /api/email-imports/retry/{id}` — retry a failed import
-- `DELETE /api/email-imports/{id}` — delete an import record
+- `POST /api/email-imports/poll` — manually trigger a poll for the current user (400 if no config)
+- `POST /api/email-imports/{id}/confirm` — persist parsed data
+- `POST /api/email-imports/{id}/skip` — mark as skipped
+- `DELETE /api/email-imports/{id}` — soft-delete (dismissed)
 
-The poller runs as a background asyncio task started in the FastAPI lifespan hook.
+**Email Imports UI:** if no config is saved, shows a setup screen with an App Password form and instructions. Once configured, shows import list with an "Email settings" toggle at the bottom to update or remove config.
 
 ## Transfer Detection
 `services/transfers.py` scans all unreviewed transactions for candidate account-to-account transfers: negative on one account paired with a positive of the same amount (±£0.02) on a different account within ±2 days. Confidence score: 1.0 for same-day exact match, reduced by 0.15/day and proportional amount delta.

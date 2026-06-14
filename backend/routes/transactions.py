@@ -2,8 +2,9 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import extract
 from sqlalchemy.orm import Session
 
+from auth import get_current_user
 from database import get_db
-from models import Category, Transaction
+from models import Account, Category, Transaction
 from schemas import (
     BulkCategoriseRequest,
     BulkCategoriseResponse,
@@ -13,6 +14,15 @@ from schemas import (
 )
 
 router = APIRouter()
+
+
+def _user_txn_query(db: Session, user_email: str):
+    """Base query: transactions belonging to the current user's accounts."""
+    return (
+        db.query(Transaction)
+        .join(Account, Transaction.account_id == Account.id)
+        .filter(Account.user_email == user_email)
+    )
 
 
 @router.get("/", response_model=TransactionPage)
@@ -26,9 +36,10 @@ def list_transactions(
     search: str = "",
     amount_type: str = "",
     hide_transfers: bool = False,
+    current_user: str = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    q = db.query(Transaction).order_by(Transaction.date.desc())
+    q = _user_txn_query(db, current_user).order_by(Transaction.date.desc())
 
     if account_id is not None:
         q = q.filter(Transaction.account_id == account_id)
@@ -41,68 +52,72 @@ def list_transactions(
         q = q.filter(extract("year", Transaction.date) == year)
     if month is not None:
         q = q.filter(extract("month", Transaction.date) == month)
-    if search.strip():
-        q = q.filter(Transaction.description.ilike(f"%{search.strip()}%"))
+    if search:
+        q = q.filter(Transaction.description.ilike(f"%{search}%"))
     if amount_type == "in":
         q = q.filter(Transaction.amount > 0)
     elif amount_type == "out":
         q = q.filter(Transaction.amount < 0)
     if hide_transfers:
-        q = q.filter(Transaction.is_transfer.is_(False))
+        q = q.filter(Transaction.is_transfer == False)  # noqa: E712
 
     total = q.count()
-    pages = max(1, (total + per_page - 1) // per_page)
     items = q.offset((page - 1) * per_page).limit(per_page).all()
 
     return TransactionPage(
         transactions=items,
         total=total,
         page=page,
-        pages=pages,
         per_page=per_page,
+        pages=(total + per_page - 1) // per_page,
     )
 
 
 @router.get("/{txn_id}", response_model=TransactionOut)
-def get_transaction(txn_id: int, db: Session = Depends(get_db)):
-    t = db.get(Transaction, txn_id)
-    if not t:
+def get_transaction(
+    txn_id: int,
+    current_user: str = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    txn = _user_txn_query(db, current_user).filter(Transaction.id == txn_id).first()
+    if not txn:
         raise HTTPException(status_code=404, detail="Transaction not found")
-    return t
+    return txn
 
 
 @router.patch("/{txn_id}", response_model=TransactionOut)
 def update_transaction(
-    txn_id: int, body: TransactionUpdate, db: Session = Depends(get_db)
+    txn_id: int,
+    body: TransactionUpdate,
+    current_user: str = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
-    t = db.get(Transaction, txn_id)
-    if not t:
+    txn = _user_txn_query(db, current_user).filter(Transaction.id == txn_id).first()
+    if not txn:
         raise HTTPException(status_code=404, detail="Transaction not found")
-
-    if body.category_id is not None:
-        if not db.get(Category, body.category_id):
-            raise HTTPException(status_code=404, detail="Category not found")
-        t.category_id = body.category_id
-    elif body.category_id == 0:
-        t.category_id = None
-
-    if body.is_recurring is not None:
-        t.is_recurring = body.is_recurring
-
+    for field, value in body.model_dump(exclude_unset=True).items():
+        setattr(txn, field, value)
     db.commit()
-    db.refresh(t)
-    return t
+    db.refresh(txn)
+    return txn
 
 
 @router.patch("/bulk-categorise", response_model=BulkCategoriseResponse)
-def bulk_categorise(body: BulkCategoriseRequest, db: Session = Depends(get_db)):
-    if not db.get(Category, body.category_id):
+def bulk_categorise(
+    body: BulkCategoriseRequest,
+    current_user: str = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    cat = db.get(Category, body.category_id)
+    if not cat:
         raise HTTPException(status_code=404, detail="Category not found")
 
-    updated = (
-        db.query(Transaction)
+    txns = (
+        _user_txn_query(db, current_user)
         .filter(Transaction.description.ilike(f"%{body.pattern}%"))
-        .update({"category_id": body.category_id}, synchronize_session=False)
+        .all()
     )
+    for t in txns:
+        t.category_id = body.category_id
     db.commit()
-    return BulkCategoriseResponse(updated=updated)
+    return BulkCategoriseResponse(updated=len(txns))

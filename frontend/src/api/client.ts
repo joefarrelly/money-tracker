@@ -12,6 +12,16 @@ export function invalidateCache() {
   cache.clear();
 }
 
+function authHeaders(): Record<string, string> {
+  const token = localStorage.getItem("auth_token");
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
+function handleUnauthorized() {
+  localStorage.removeItem("auth_token");
+  window.location.href = "/";
+}
+
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const isGet = !options?.method || options.method.toUpperCase() === "GET";
   const key = `${BASE}${path}`;
@@ -24,9 +34,17 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
   }
 
   const res = await fetch(key, {
-    headers: { "Content-Type": "application/json", ...options?.headers },
+    headers: {
+      "Content-Type": "application/json",
+      ...authHeaders(),
+      ...options?.headers,
+    },
     ...options,
   });
+  if (res.status === 401) {
+    handleUnauthorized();
+    throw new Error("Unauthorized");
+  }
   if (res.status === 204) return undefined as T;
   const text = await res.text();
   if (!res.ok) {
@@ -89,11 +107,13 @@ export const createSalary = (data: object) =>
 export const deleteSalary = (id: number) =>
   request<void>(`/salaries/${id}`, { method: "DELETE" });
 
-export const bulkUploadPayslips = (files: File[]) => {
+export const bulkUploadPayslips = (files: File[], templateId: number) => {
   const fd = new FormData();
   files.forEach((f) => fd.append("files", f));
+  fd.append("template_id", String(templateId));
   return fetch(`${BASE}/salaries/bulk-upload-payslips`, {
     method: "POST",
+    headers: authHeaders(),
     body: fd,
   }).then(async (r) => {
     const text = await r.text();
@@ -123,11 +143,13 @@ export const bulkUploadPayslips = (files: File[]) => {
   });
 };
 
-export const uploadPayslip = (file: File) => {
+export const uploadPayslip = (file: File, templateId: number) => {
   const fd = new FormData();
   fd.append("file", file);
+  fd.append("template_id", String(templateId));
   return fetch(`${BASE}/salaries/upload-payslip`, {
     method: "POST",
+    headers: authHeaders(),
     body: fd,
   }).then(async (r) => {
     const text = await r.text();
@@ -244,38 +266,45 @@ export const getIdentities = () =>
 
 // Upload
 export const uploadStatement = (formData: FormData) =>
-  fetch(`${BASE}/upload/`, { method: "POST", body: formData }).then((r) => {
+  fetch(`${BASE}/upload/`, {
+    method: "POST",
+    headers: authHeaders(),
+    body: formData,
+  }).then((r) => {
     if (!r.ok) return r.json().then((e) => Promise.reject(new Error(e.error)));
     return r.json();
   });
 
-export const previewUpload = (file: File) => {
+export const previewUpload = (file: File, templateId?: number) => {
   const fd = new FormData();
   fd.append("file", file);
-  return fetch(`${BASE}/upload/preview`, { method: "POST", body: fd }).then(
-    async (r) => {
-      const text = await r.text();
-      if (!r.ok) {
-        try {
-          const e = JSON.parse(text);
-          return Promise.reject(
-            new Error(e.detail ?? e.error ?? `HTTP ${r.status}`),
-          );
-        } catch {
-          return Promise.reject(
-            new Error(`Server error (${r.status}): ${text.slice(0, 120)}`),
-          );
-        }
-      }
+  if (templateId != null) fd.append("template_id", String(templateId));
+  return fetch(`${BASE}/upload/preview`, {
+    method: "POST",
+    headers: authHeaders(),
+    body: fd,
+  }).then(async (r) => {
+    const text = await r.text();
+    if (!r.ok) {
       try {
-        return JSON.parse(text) as import("../types").PreviewResponse;
+        const e = JSON.parse(text);
+        return Promise.reject(
+          new Error(e.detail ?? e.error ?? `HTTP ${r.status}`),
+        );
       } catch {
         return Promise.reject(
-          new Error(`Unexpected response from server: ${text.slice(0, 120)}`),
+          new Error(`Server error (${r.status}): ${text.slice(0, 120)}`),
         );
       }
-    },
-  );
+    }
+    try {
+      return JSON.parse(text) as import("../types").PreviewResponse;
+    } catch {
+      return Promise.reject(
+        new Error(`Unexpected response from server: ${text.slice(0, 120)}`),
+      );
+    }
+  });
 };
 
 export const confirmUpload = (body: object) =>
@@ -286,14 +315,56 @@ export const confirmUpload = (body: object) =>
     transactions: import("../types").Transaction[];
   }>("/upload/confirm", { method: "POST", body: JSON.stringify(body) });
 
-export const getFormats = () =>
-  request<import("../types").StatementFormat[]>("/upload/formats");
+// Templates
+export const getTemplates = (templateType?: string) =>
+  request<import("../types").UserParserTemplate[]>(
+    `/templates/${templateType ? `?template_type=${templateType}` : ""}`,
+  );
+
+export const createTemplate = (body: object) =>
+  request<import("../types").UserParserTemplate>("/templates/", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+
+export const updateTemplate = (id: number, body: object) =>
+  request<import("../types").UserParserTemplate>(`/templates/${id}`, {
+    method: "PUT",
+    body: JSON.stringify(body),
+  });
+
+export const deleteTemplate = (id: number) =>
+  request<void>(`/templates/${id}`, { method: "DELETE" });
+
+export const extractTables = (file: File) => {
+  const fd = new FormData();
+  fd.append("file", file);
+  return fetch(`${BASE}/templates/extract-tables`, {
+    method: "POST",
+    headers: authHeaders(),
+    body: fd,
+  }).then(async (r) => {
+    const text = await r.text();
+    if (!r.ok) {
+      try {
+        const e = JSON.parse(text);
+        return Promise.reject(new Error(e.detail ?? `HTTP ${r.status}`));
+      } catch {
+        return Promise.reject(
+          new Error(`HTTP ${r.status}: ${text.slice(0, 120)}`),
+        );
+      }
+    }
+    return JSON.parse(text) as import("../types").ExtractTablesResponse;
+  });
+};
 
 export const detectAccount = (file: File) => {
   const fd = new FormData();
   fd.append("file", file);
   return fetch(`${BASE}/upload/detect-account`, {
     method: "POST",
+    headers: authHeaders(),
     body: fd,
   }).then(async (r) => {
     const text = await r.text();
@@ -301,6 +372,32 @@ export const detectAccount = (file: File) => {
     return JSON.parse(text) as { account_number: string | null };
   });
 };
+
+// Email config
+export type EmailConfig = {
+  configured: boolean;
+  user_email?: string;
+  label: string;
+  enabled: boolean;
+};
+
+export const getEmailConfig = () =>
+  request<EmailConfig>("/settings/email-config");
+
+export const setEmailConfig = (data: {
+  app_password: string;
+  label: string;
+  enabled: boolean;
+}) =>
+  request<EmailConfig>("/settings/email-config", {
+    method: "PUT",
+    body: JSON.stringify(data),
+  });
+
+export const deleteEmailConfig = () =>
+  request<{ configured: false }>("/settings/email-config", {
+    method: "DELETE",
+  });
 
 // Email imports
 export const getEmailImports = (status?: string) =>
@@ -328,34 +425,34 @@ export const deleteEmailImport = (id: number) =>
 
 export const bulkUpload = (
   files: File[],
-  formatId: number,
+  templateId: number,
   accountNumber: string,
-  skipPatterns: string,
   year?: number,
 ) => {
   const fd = new FormData();
   files.forEach((f) => fd.append("files", f));
-  fd.append("format_id", String(formatId));
+  fd.append("template_id", String(templateId));
   fd.append("account_number", accountNumber);
-  fd.append("skip_patterns", skipPatterns);
   if (year != null) fd.append("year", String(year));
-  return fetch(`${BASE}/upload/bulk`, { method: "POST", body: fd }).then(
-    async (r) => {
-      const text = await r.text();
-      if (!r.ok) {
-        try {
-          const e = JSON.parse(text);
-          return Promise.reject(
-            new Error(e.detail ?? e.error ?? `HTTP ${r.status}`),
-          );
-        } catch {
-          return Promise.reject(
-            new Error(`Server error (${r.status}): ${text.slice(0, 120)}`),
-          );
-        }
+  return fetch(`${BASE}/upload/bulk`, {
+    method: "POST",
+    headers: authHeaders(),
+    body: fd,
+  }).then(async (r) => {
+    const text = await r.text();
+    if (!r.ok) {
+      try {
+        const e = JSON.parse(text);
+        return Promise.reject(
+          new Error(e.detail ?? e.error ?? `HTTP ${r.status}`),
+        );
+      } catch {
+        return Promise.reject(
+          new Error(`Server error (${r.status}): ${text.slice(0, 120)}`),
+        );
       }
-      cache.clear();
-      return JSON.parse(text) as import("../types").BulkUploadResult;
-    },
-  );
+    }
+    cache.clear();
+    return JSON.parse(text) as import("../types").BulkUploadResult;
+  });
 };

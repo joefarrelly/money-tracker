@@ -141,10 +141,13 @@ export interface PaginatedTransactions {
   per_page: number;
 }
 
-export interface StatementFormat {
+export interface UserParserTemplate {
   id: number;
   name: string;
-  column_headers: string[];
+  template_type: "statement" | "payslip";
+  file_type: "pdf" | "csv";
+  table_index: number | null;
+  column_headers: string[] | null;
   date_col: number | null;
   description_col: number | null;
   date_description_col: number | null;
@@ -153,10 +156,23 @@ export interface StatementFormat {
   amount_col: number | null;
   money_in_col: number | null;
   money_out_col: number | null;
-  date_format: string;
-  year_source: "inline" | "detect" | "manual";
-  is_builtin: boolean;
-  use_count: number;
+  date_format: string | null;
+  year_source: "inline" | "detect" | "manual" | null;
+  skip_patterns: string[];
+  deduction_boundary_keyword: string | null;
+  created_at: string;
+}
+
+export interface ExtractedTable {
+  index: number;
+  headers: string[];
+  sample_rows: string[][];
+  total_rows: number;
+}
+
+export interface ExtractTablesResponse {
+  tables: ExtractedTable[];
+  detected_account_number: string | null;
 }
 
 export interface BulkFileResult {
@@ -214,7 +230,6 @@ export interface ColumnMapping {
 
 export interface PreviewResponse {
   preview_token: string;
-  matched_format: StatementFormat | null;
   confidence: number;
   column_headers: string[];
   proposed_mapping: ColumnMapping;

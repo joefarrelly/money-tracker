@@ -17,10 +17,6 @@ EMAIL_DIR = os.path.abspath(
 )
 
 
-def _env(key: str) -> str:
-    return os.environ.get(key, "")
-
-
 def _decode_str(value) -> str:
     if isinstance(value, bytes):
         return value.decode("utf-8", errors="replace")
@@ -43,15 +39,10 @@ def _classify_subject(subject: str) -> str | None:
     return None
 
 
-def poll_emails(db) -> int:
+def poll_emails(
+    db, address: str, password: str, label: str = "INBOX", user_email: str | None = None
+) -> int:
     """Check inbox for new PDF emails and create pending EmailImport records."""
-    address = _env("EMAIL_ADDRESS")
-    password = _env("EMAIL_APP_PASSWORD")
-    label = _env("EMAIL_LABEL") or "INBOX"
-
-    if not address or not password:
-        logger.warning("Email credentials not configured — skipping poll")
-        return 0
 
     from models import EmailImport
 
@@ -110,6 +101,7 @@ def poll_emails(db) -> int:
                 raw_data, error = _parse_pdf(save_path, import_type, db)
                 db.add(
                     EmailImport(
+                        user_email=user_email or address,
                         message_id=uid,
                         subject=subject,
                         sender=sender,

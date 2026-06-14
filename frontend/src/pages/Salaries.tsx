@@ -5,8 +5,14 @@ import {
   uploadPayslip,
   bulkUploadPayslips,
   getIdentities,
+  getTemplates,
 } from "../api/client";
-import type { Salary, PayslipLineItem, PersonIdentity } from "../types";
+import type {
+  Salary,
+  PayslipLineItem,
+  PersonIdentity,
+  UserParserTemplate,
+} from "../types";
 import { Spinner } from "../components/Spinner";
 
 function fmt(n: number) {
@@ -92,6 +98,13 @@ function LineItemsTable({ items }: { items: PayslipLineItem[] }) {
 export default function Salaries() {
   const [salaries, setSalaries] = useState<Salary[]>([]);
   const [identities, setIdentities] = useState<PersonIdentity[]>([]);
+  const [payslipTemplates, setPayslipTemplates] = useState<
+    UserParserTemplate[]
+  >([]);
+  const [selectedTemplateId, setSelectedTemplateId] = useState<number | "">("");
+  const [selectedBulkTemplateId, setSelectedBulkTemplateId] = useState<
+    number | ""
+  >("");
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [bulkResults, setBulkResults] = useState<
@@ -111,10 +124,11 @@ export default function Salaries() {
   const bulkInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    Promise.all([getSalaries(), getIdentities()])
-      .then(([s, i]) => {
+    Promise.all([getSalaries(), getIdentities(), getTemplates("payslip")])
+      .then(([s, i, t]) => {
         setSalaries(s);
         setIdentities(i);
+        setPayslipTemplates(t);
       })
       .finally(() => setLoading(false));
   }, []);
@@ -141,10 +155,15 @@ export default function Salaries() {
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    if (selectedTemplateId === "") {
+      setUploadError("Select a payslip template before uploading");
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      return;
+    }
     setUploadError(null);
     setUploading(true);
     try {
-      const created = await uploadPayslip(file);
+      const created = await uploadPayslip(file, selectedTemplateId as number);
       setSalaries((prev) => {
         const without = prev.filter((s) => s.id !== created.id);
         return [created, ...without].sort(
@@ -166,10 +185,24 @@ export default function Salaries() {
   const handleBulkUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files ?? []);
     if (!files.length) return;
+    if (selectedBulkTemplateId === "") {
+      setBulkResults([
+        {
+          filename: "—",
+          status: "error",
+          detail: "Select a payslip template before uploading",
+        },
+      ]);
+      if (bulkInputRef.current) bulkInputRef.current.value = "";
+      return;
+    }
     setBulkResults(null);
     setBulkRunning(true);
     try {
-      const res = await bulkUploadPayslips(files);
+      const res = await bulkUploadPayslips(
+        files,
+        selectedBulkTemplateId as number,
+      );
       setBulkResults(res.results);
       if (res.imported > 0) {
         // Reload full list so new entries appear
@@ -214,25 +247,56 @@ export default function Salaries() {
           Upload payslip PDF
         </h2>
         {uploadError && <p className="text-sm text-red-400">{uploadError}</p>}
-        <div className="flex items-center gap-3">
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".pdf"
-            className="hidden"
-            onChange={handleUpload}
-          />
-          <button
-            onClick={() => fileInputRef.current?.click()}
-            disabled={uploading}
-            className="bg-blue-700 hover:bg-blue-600 disabled:opacity-50 px-4 py-2 rounded-lg text-sm font-medium transition-colors"
-          >
-            {uploading ? "Parsing…" : "Choose PDF…"}
-          </button>
-          <span className="text-xs text-slate-500">
-            Extracts all line items automatically
-          </span>
-        </div>
+        {payslipTemplates.length === 0 ? (
+          <p className="text-xs text-slate-500">
+            No payslip templates yet.{" "}
+            <a
+              href="/templates"
+              className="text-indigo-400 hover:text-indigo-300"
+            >
+              Create one
+            </a>{" "}
+            before uploading.
+          </p>
+        ) : (
+          <>
+            <div>
+              <label className="text-xs text-slate-400">Template</label>
+              <select
+                value={selectedTemplateId}
+                onChange={(e) =>
+                  setSelectedTemplateId(
+                    e.target.value ? Number(e.target.value) : "",
+                  )
+                }
+                className="mt-1 w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm"
+              >
+                <option value="">— Select a template —</option>
+                {payslipTemplates.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="flex items-center gap-3">
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".pdf"
+                className="hidden"
+                onChange={handleUpload}
+              />
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                disabled={uploading || selectedTemplateId === ""}
+                className="bg-blue-700 hover:bg-blue-600 disabled:opacity-50 px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+              >
+                {uploading ? "Parsing…" : "Choose PDF…"}
+              </button>
+            </div>
+          </>
+        )}
       </div>
 
       {/* Bulk import (one-time) */}
@@ -245,28 +309,62 @@ export default function Salaries() {
             Select all PDFs at once
           </span>
         </div>
-        <div className="flex items-center gap-3">
-          <input
-            ref={bulkInputRef}
-            type="file"
-            accept=".pdf"
-            multiple
-            className="hidden"
-            onChange={handleBulkUpload}
-          />
-          <button
-            onClick={() => bulkInputRef.current?.click()}
-            disabled={bulkRunning}
-            className="bg-slate-700 hover:bg-slate-600 disabled:opacity-50 px-4 py-2 rounded-lg text-sm font-medium transition-colors"
-          >
-            {bulkRunning ? "Importing…" : "Choose PDFs…"}
-          </button>
-          {bulkRunning && (
-            <span className="text-xs text-slate-500">
-              Parsing PDFs, this may take a moment…
-            </span>
-          )}
-        </div>
+        {payslipTemplates.length === 0 ? (
+          <p className="text-xs text-slate-500">
+            No payslip templates yet.{" "}
+            <a
+              href="/templates"
+              className="text-indigo-400 hover:text-indigo-300"
+            >
+              Create one
+            </a>{" "}
+            before uploading.
+          </p>
+        ) : (
+          <>
+            <div>
+              <label className="text-xs text-slate-400">Template</label>
+              <select
+                value={selectedBulkTemplateId}
+                onChange={(e) =>
+                  setSelectedBulkTemplateId(
+                    e.target.value ? Number(e.target.value) : "",
+                  )
+                }
+                className="mt-1 w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm"
+              >
+                <option value="">— Select a template —</option>
+                {payslipTemplates.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="flex items-center gap-3">
+              <input
+                ref={bulkInputRef}
+                type="file"
+                accept=".pdf"
+                multiple
+                className="hidden"
+                onChange={handleBulkUpload}
+              />
+              <button
+                onClick={() => bulkInputRef.current?.click()}
+                disabled={bulkRunning || selectedBulkTemplateId === ""}
+                className="bg-slate-700 hover:bg-slate-600 disabled:opacity-50 px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+              >
+                {bulkRunning ? "Importing…" : "Choose PDFs…"}
+              </button>
+              {bulkRunning && (
+                <span className="text-xs text-slate-500">
+                  Parsing PDFs, this may take a moment…
+                </span>
+              )}
+            </div>
+          </>
+        )}
         {bulkResults && (
           <div className="mt-2 space-y-1 max-h-64 overflow-y-auto">
             <p className="text-xs text-slate-400 mb-2">

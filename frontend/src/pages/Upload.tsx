@@ -3,7 +3,7 @@ import {
   bulkUpload,
   confirmUpload,
   detectAccount,
-  getFormats,
+  getTemplates,
   previewUpload,
 } from "../api/client";
 import type {
@@ -12,8 +12,8 @@ import type {
   ColumnMapping,
   ColumnRole,
   PreviewResponse,
-  StatementFormat,
   Transaction,
+  UserParserTemplate,
 } from "../types";
 
 // ── Role metadata ─────────────────────────────────────────────────────────────
@@ -39,7 +39,6 @@ function roleColor(role: string) {
 
 // ── Mapping helpers ───────────────────────────────────────────────────────────
 
-/** Convert { colIndex: role } assignment map to the API ColumnMapping shape. */
 function buildColumnMapping(
   roleMap: Record<number, ColumnRole>,
   preview: PreviewResponse,
@@ -67,7 +66,6 @@ function buildColumnMapping(
   };
 }
 
-/** Initialise roleMap from a ColumnMapping object. */
 function mappingToRoleMap(m: ColumnMapping): Record<number, ColumnRole> {
   const out: Record<number, ColumnRole> = {};
   if (m.date_col != null) out[m.date_col] = "date";
@@ -96,41 +94,56 @@ function validateRoleMap(roleMap: Record<number, ColumnRole>): string | null {
   return null;
 }
 
-function formatToRoleMap(fmt: StatementFormat): Record<number, ColumnRole> {
-  const out: Record<number, ColumnRole> = {};
-  if (fmt.date_col != null) out[fmt.date_col] = "date";
-  if (fmt.description_col != null) out[fmt.description_col] = "description";
-  if (fmt.date_description_col != null)
-    out[fmt.date_description_col] = "date_description";
-  if (fmt.balance_col != null) out[fmt.balance_col] = "balance";
-  if (fmt.amount_col != null) out[fmt.amount_col] = "amount";
-  if (fmt.money_in_col != null) out[fmt.money_in_col] = "money_in";
-  if (fmt.money_out_col != null) out[fmt.money_out_col] = "money_out";
-  return out;
+// ── Template selector ─────────────────────────────────────────────────────────
+
+function TemplateSelect({
+  templates,
+  value,
+  onChange,
+  placeholder,
+}: {
+  templates: UserParserTemplate[];
+  value: number | "";
+  onChange: (id: number | "") => void;
+  placeholder: string;
+}) {
+  return (
+    <select
+      value={value}
+      onChange={(e) => onChange(e.target.value ? Number(e.target.value) : "")}
+      className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm"
+    >
+      <option value="">{placeholder}</option>
+      {templates.map((t) => (
+        <option key={t.id} value={t.id}>
+          {t.name} ({t.file_type.toUpperCase()})
+        </option>
+      ))}
+    </select>
+  );
 }
 
 // ── Bulk upload component ─────────────────────────────────────────────────────
 
 function BulkUpload({
-  formats,
+  templates,
   onSwitchToSingle,
 }: {
-  formats: StatementFormat[];
+  templates: UserParserTemplate[];
   onSwitchToSingle: () => void;
 }) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
-  const [formatId, setFormatId] = useState<number | "">("");
+  const [templateId, setTemplateId] = useState<number | "">("");
   const [accountNumber, setAccountNumber] = useState("");
   const [accountDetected, setAccountDetected] = useState(false);
-  const [skipPatterns, setSkipPatterns] = useState("");
   const [year, setYear] = useState(new Date().getFullYear());
   const [importing, setImporting] = useState(false);
   const [result, setResult] = useState<BulkUploadResult | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const selectedFormat = formats.find((f) => f.id === formatId);
-  const needsYear = selectedFormat?.year_source === "manual";
+  const selectedTemplate = templates.find((t) => t.id === templateId);
+  const needsYear = selectedTemplate?.year_source === "manual";
 
   async function handleFiles(e: React.ChangeEvent<HTMLInputElement>) {
     const files = Array.from(e.target.files ?? []);
@@ -150,11 +163,11 @@ function BulkUpload({
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!selectedFiles.length) {
-      setError("Select at least one PDF");
+      setError("Select at least one file");
       return;
     }
-    if (!formatId) {
-      setError("Select a format");
+    if (!templateId) {
+      setError("Select a template");
       return;
     }
     if (!accountNumber.trim()) {
@@ -167,9 +180,8 @@ function BulkUpload({
     try {
       const r = await bulkUpload(
         selectedFiles,
-        formatId as number,
+        templateId as number,
         accountNumber.trim(),
-        skipPatterns,
         needsYear ? year : undefined,
       );
       setResult(r);
@@ -182,10 +194,9 @@ function BulkUpload({
 
   function reset() {
     setSelectedFiles([]);
-    setFormatId("");
+    setTemplateId("");
     setAccountNumber("");
     setAccountDetected(false);
-    setSkipPatterns("");
     setResult(null);
     setError(null);
     if (fileRef.current) fileRef.current.value = "";
@@ -219,7 +230,6 @@ function BulkUpload({
             Upload more
           </button>
         </div>
-
         <div className="bg-slate-900 rounded-xl border border-slate-800 overflow-hidden">
           <table className="w-full text-sm">
             <thead>
@@ -246,9 +256,6 @@ function BulkUpload({
                     <span className="text-slate-300">{r.filename}</span>
                     {r.error && (
                       <p className="text-red-400 text-xs mt-0.5">{r.error}</p>
-                    )}
-                    {r.note && (
-                      <p className="text-yellow-600 text-xs mt-0.5">{r.note}</p>
                     )}
                   </td>
                   <td className="px-4 py-2 text-right tabular-nums text-green-400">
@@ -280,63 +287,30 @@ function BulkUpload({
 
   return (
     <form onSubmit={handleSubmit} className="max-w-2xl space-y-5">
-      {/* File picker */}
-      <div className="bg-slate-900 rounded-xl border border-slate-800 p-6 flex flex-col items-center gap-4 text-center">
-        <div className="w-12 h-12 rounded-full bg-slate-800 flex items-center justify-center text-xl">
-          📂
-        </div>
-        <div>
-          <p className="text-sm text-slate-300 font-medium">
-            {selectedFiles.length > 0
-              ? `${selectedFiles.length} file${selectedFiles.length !== 1 ? "s" : ""} selected`
-              : "Select PDF statements"}
-          </p>
-          <p className="text-xs text-slate-500 mt-1">
-            All files must be from the same account and format
-          </p>
-        </div>
-        <label className="cursor-pointer bg-indigo-600 hover:bg-indigo-500 px-4 py-2 rounded-lg text-sm font-medium transition-colors">
-          Choose files
-          <input
-            ref={fileRef}
-            type="file"
-            accept=".pdf"
-            multiple
-            onChange={handleFiles}
-            className="hidden"
-          />
-        </label>
-        {selectedFiles.length > 0 && (
-          <div className="w-full text-left space-y-1 max-h-40 overflow-y-auto">
-            {selectedFiles.map((f, i) => (
-              <p key={i} className="text-xs text-slate-400 truncate">
-                {f.name}
-              </p>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* Format + account */}
+      {/* Template selector */}
       <div className="bg-slate-900 rounded-xl border border-slate-800 p-4 space-y-3">
         <div>
-          <label className="text-xs text-slate-400">Format *</label>
-          <select
-            required
-            value={formatId}
-            onChange={(e) =>
-              setFormatId(e.target.value ? Number(e.target.value) : "")
-            }
-            className="mt-1 w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm"
-          >
-            <option value="">— Select a saved format —</option>
-            {formats.map((f) => (
-              <option key={f.id} value={f.id}>
-                {f.name}
-                {f.is_builtin ? " (built-in)" : ""}
-              </option>
-            ))}
-          </select>
+          <label className="text-xs text-slate-400">Template *</label>
+          <div className="mt-1">
+            <TemplateSelect
+              templates={templates}
+              value={templateId}
+              onChange={setTemplateId}
+              placeholder="— Select a template —"
+            />
+          </div>
+          {templates.length === 0 && (
+            <p className="text-xs text-slate-500 mt-1">
+              No templates yet.{" "}
+              <a
+                href="/templates"
+                className="text-indigo-400 hover:text-indigo-300"
+              >
+                Create one
+              </a>{" "}
+              first.
+            </p>
+          )}
         </div>
         <div>
           <div className="flex items-center gap-2">
@@ -374,21 +348,36 @@ function BulkUpload({
         )}
       </div>
 
-      {/* Skip patterns */}
-      <div className="bg-slate-900 rounded-xl border border-slate-800 p-4 space-y-2">
-        <label className="text-xs text-slate-400 font-medium uppercase tracking-wide">
-          Skip rows
-        </label>
-        <input
-          type="text"
-          value={skipPatterns}
-          onChange={(e) => setSkipPatterns(e.target.value)}
-          placeholder="e.g. Opening balance, Closing balance"
-          className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm"
-        />
-        <p className="text-xs text-slate-600">
-          Comma-separated descriptions to exclude across all files
+      {/* File picker */}
+      <div className="bg-slate-900 rounded-xl border border-slate-800 p-6 flex flex-col items-center gap-4 text-center">
+        <p className="text-sm text-slate-300 font-medium">
+          {selectedFiles.length > 0
+            ? `${selectedFiles.length} file${selectedFiles.length !== 1 ? "s" : ""} selected`
+            : "Select statement files"}
         </p>
+        <p className="text-xs text-slate-500">
+          PDF or CSV · all files must use the same template
+        </p>
+        <label className="cursor-pointer bg-indigo-600 hover:bg-indigo-500 px-4 py-2 rounded-lg text-sm font-medium transition-colors">
+          Choose files
+          <input
+            ref={fileRef}
+            type="file"
+            accept=".pdf,.csv"
+            multiple
+            onChange={handleFiles}
+            className="hidden"
+          />
+        </label>
+        {selectedFiles.length > 0 && (
+          <div className="w-full text-left space-y-1 max-h-40 overflow-y-auto">
+            {selectedFiles.map((f, i) => (
+              <p key={i} className="text-xs text-slate-400 truncate">
+                {f.name}
+              </p>
+            ))}
+          </div>
+        )}
       </div>
 
       {error && <p className="text-sm text-red-400">{error}</p>}
@@ -406,7 +395,7 @@ function BulkUpload({
   );
 }
 
-// ── Component ─────────────────────────────────────────────────────────────────
+// ── Single upload component ───────────────────────────────────────────────────
 
 type Stage = "idle" | "previewing" | "mapping" | "importing" | "done";
 
@@ -420,9 +409,8 @@ export default function Upload() {
   const [accountNumber, setAccountNumber] = useState("");
   const [year, setYear] = useState(new Date().getFullYear());
   const [skipPatterns, setSkipPatterns] = useState("");
-  const [saveFormat, setSaveFormat] = useState(false);
-  const [formatName, setFormatName] = useState("");
-  const [formats, setFormats] = useState<StatementFormat[]>([]);
+  const [templates, setTemplates] = useState<UserParserTemplate[]>([]);
+  const [selectedTemplateId, setSelectedTemplateId] = useState<number | "">("");
   const [result, setResult] = useState<{
     added: number;
     skipped: number;
@@ -431,12 +419,10 @@ export default function Upload() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    getFormats()
-      .then(setFormats)
+    getTemplates("statement")
+      .then(setTemplates)
       .catch(() => {});
   }, []);
-
-  // ── Step 1: drop file ───────────────────────────────────────────────────────
 
   async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -444,20 +430,26 @@ export default function Upload() {
     setError(null);
     setStage("previewing");
     try {
-      const data = await previewUpload(file);
+      const templateId =
+        selectedTemplateId !== "" ? (selectedTemplateId as number) : undefined;
+      const data = await previewUpload(file, templateId);
       setPreview(data);
       setRoleMap(mappingToRoleMap(data.proposed_mapping));
       setAccountNumber(data.detected_account_number ?? "");
       if (data.detected_year) setYear(data.detected_year);
-      if (data.matched_format) setFormatName(data.matched_format.name);
+      // Pre-populate skip patterns from template
+      if (selectedTemplateId !== "") {
+        const tmpl = templates.find((t) => t.id === selectedTemplateId);
+        if (tmpl?.skip_patterns.length) {
+          setSkipPatterns(tmpl.skip_patterns.join(", "));
+        }
+      }
       setStage("mapping");
     } catch (err) {
       setError((err as Error).message);
       setStage("idle");
     }
   }
-
-  // ── Step 2: confirm mapping ─────────────────────────────────────────────────
 
   async function handleConfirm(e: React.FormEvent) {
     e.preventDefault();
@@ -477,23 +469,19 @@ export default function Upload() {
     setStage("importing");
 
     const mapping = buildColumnMapping(roleMap, preview);
+    const skip_patterns = skipPatterns
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
 
     try {
-      const skip_patterns = skipPatterns
-        .split(",")
-        .map((s) => s.trim())
-        .filter(Boolean);
-
       const r = await confirmUpload({
         preview_token: preview.preview_token,
         account_number: accountNumber.trim(),
         mapping,
-        column_headers: preview.column_headers,
         year: preview.needs_year ? year : undefined,
         skip_patterns,
-        save_format: saveFormat,
-        format_name: saveFormat ? formatName : undefined,
-        format_id: preview.matched_format?.id ?? undefined,
+        template_id: selectedTemplateId !== "" ? selectedTemplateId : undefined,
       });
       setResult({
         added: r.added,
@@ -515,18 +503,15 @@ export default function Upload() {
     setResult(null);
     setError(null);
     setSkipPatterns("");
-    setSaveFormat(false);
-    setFormatName("");
     if (fileRef.current) fileRef.current.value = "";
   }
 
-  // ── Render ──────────────────────────────────────────────────────────────────
+  // ── Done ────────────────────────────────────────────────────────────────────
 
   if (stage === "done" && result) {
     return (
       <div className="max-w-2xl space-y-5">
-        <h1 className="text-lg font-semibold">Upload bank statement</h1>
-
+        <h1 className="text-lg font-semibold">Upload statement</h1>
         <div className="bg-slate-900 rounded-xl border border-green-800 p-4 flex items-center justify-between">
           <p className="text-green-400 text-sm font-medium">
             {result.added} transaction{result.added !== 1 ? "s" : ""} imported
@@ -544,7 +529,6 @@ export default function Upload() {
             Upload another
           </button>
         </div>
-
         {result.transactions.length > 0 && (
           <div className="bg-slate-900 rounded-xl border border-slate-800 overflow-hidden">
             <table className="w-full text-sm">
@@ -584,71 +568,46 @@ export default function Upload() {
     );
   }
 
+  // ── Previewing spinner ───────────────────────────────────────────────────────
+
   if (stage === "previewing") {
     return (
       <div className="max-w-lg space-y-6">
-        <h1 className="text-lg font-semibold">Upload bank statement</h1>
+        <h1 className="text-lg font-semibold">Upload statement</h1>
         <div className="bg-slate-900 rounded-xl border border-slate-800 p-8 flex flex-col items-center gap-3">
           <div className="w-6 h-6 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
-          <p className="text-sm text-slate-400">Analysing statement…</p>
+          <p className="text-sm text-slate-400">Analysing file…</p>
         </div>
       </div>
     );
   }
 
+  // ── Mapping step ─────────────────────────────────────────────────────────────
+
   if ((stage === "mapping" || stage === "importing") && preview) {
-    const {
-      matched_format,
-      confidence,
-      column_headers,
-      sample_rows,
-      needs_year,
-      total_rows,
-    } = preview;
+    const { column_headers, sample_rows, needs_year, total_rows } = preview;
+    const selectedTemplate = templates.find((t) => t.id === selectedTemplateId);
 
     return (
       <div className="max-w-3xl space-y-6">
-        <h1 className="text-lg font-semibold">Upload bank statement</h1>
+        <h1 className="text-lg font-semibold">Upload statement</h1>
 
-        {/* Format selector */}
-        <div className="bg-slate-900 rounded-xl border border-slate-800 p-4 flex items-center gap-4">
-          <div className="flex items-center gap-2 shrink-0">
-            {matched_format ? (
-              <span className="text-xs font-medium bg-green-900 text-green-300 px-2 py-0.5 rounded-full">
-                Matched {Math.round(confidence * 100)}%
-              </span>
-            ) : (
-              <span className="text-xs font-medium bg-yellow-900 text-yellow-300 px-2 py-0.5 rounded-full">
-                New
-              </span>
-            )}
-          </div>
-
-          <select
-            className="flex-1 bg-slate-800 border border-slate-700 rounded-lg px-3 py-1.5 text-sm"
-            value={matched_format?.id ?? ""}
-            onChange={(e) => {
-              if (!e.target.value) return;
-              const fmt = formats.find((f) => f.id === Number(e.target.value));
-              if (fmt) setRoleMap(formatToRoleMap(fmt));
-            }}
-          >
-            <option value="">— Apply a saved format —</option>
-            {formats.map((f) => (
-              <option key={f.id} value={f.id}>
-                {f.name}
-                {f.is_builtin ? " (built-in)" : ""}
-              </option>
-            ))}
-          </select>
-
-          <span className="text-xs text-slate-500 shrink-0">
-            {total_rows} rows
-          </span>
+        {/* Applied template badge */}
+        <div className="bg-slate-900 rounded-xl border border-slate-800 p-3 flex items-center gap-3">
+          {selectedTemplate ? (
+            <span className="text-xs font-medium bg-indigo-900/50 text-indigo-300 px-2 py-0.5 rounded-full">
+              {selectedTemplate.name}
+            </span>
+          ) : (
+            <span className="text-xs font-medium bg-yellow-900/50 text-yellow-300 px-2 py-0.5 rounded-full">
+              Auto-detected
+            </span>
+          )}
+          <span className="text-xs text-slate-500">{total_rows} rows</span>
         </div>
 
         <form onSubmit={handleConfirm} className="space-y-5">
-          {/* Account number + year */}
+          {/* Account + year */}
           <div className="bg-slate-900 rounded-xl border border-slate-800 p-4 grid grid-cols-2 gap-4">
             <div>
               <label className="text-xs text-slate-400">Account number *</label>
@@ -674,20 +633,20 @@ export default function Upload() {
                   className="mt-1 w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm"
                 />
                 <p className="text-xs text-slate-500 mt-1">
-                  Dates in this PDF have no year
+                  Dates in this file have no year
                 </p>
               </div>
             )}
           </div>
 
-          {/* Column mapping table */}
+          {/* Column mapping */}
           <div className="bg-slate-900 rounded-xl border border-slate-800 overflow-x-auto">
             <div className="px-4 py-3 border-b border-slate-800">
               <p className="text-xs text-slate-400 font-medium uppercase tracking-wide">
                 Column mapping
               </p>
               <p className="text-xs text-slate-600 mt-0.5">
-                Assign a role to each column. Sample rows shown below.
+                Verify and adjust column roles. Sample rows shown below.
               </p>
             </div>
             <table className="w-full text-xs">
@@ -760,38 +719,13 @@ export default function Upload() {
               type="text"
               value={skipPatterns}
               onChange={(e) => setSkipPatterns(e.target.value)}
-              placeholder="e.g. Opening balance, Closing balance, Transfer"
+              placeholder="e.g. Opening balance, Closing balance"
               className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm"
             />
             <p className="text-xs text-slate-600">
-              Comma-separated descriptions to exclude. Rows with no amount are
-              already skipped automatically.
+              Comma-separated descriptions to exclude. Pre-filled from template
+              if set.
             </p>
-          </div>
-
-          {/* Save format */}
-          <div className="bg-slate-900 rounded-xl border border-slate-800 p-4 space-y-3">
-            <label className="flex items-center gap-2 cursor-pointer select-none">
-              <input
-                type="checkbox"
-                checked={saveFormat}
-                onChange={(e) => setSaveFormat(e.target.checked)}
-                className="rounded border-slate-600 bg-slate-700 text-indigo-500"
-              />
-              <span className="text-sm text-slate-300">
-                Save this column mapping for future uploads
-              </span>
-            </label>
-            {saveFormat && (
-              <input
-                type="text"
-                placeholder="Format name, e.g. Monzo or HSBC Current"
-                value={formatName}
-                onChange={(e) => setFormatName(e.target.value)}
-                required={saveFormat}
-                className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm"
-              />
-            )}
           </div>
 
           {error && <p className="text-sm text-red-400">{error}</p>}
@@ -819,11 +753,12 @@ export default function Upload() {
     );
   }
 
-  // Default: idle — file drop (single) or bulk
+  // ── Idle ─────────────────────────────────────────────────────────────────────
+
   return (
     <div className={`${tab === "single" ? "max-w-lg" : "max-w-4xl"} space-y-6`}>
       <div className="flex items-center justify-between">
-        <h1 className="text-lg font-semibold">Upload bank statement</h1>
+        <h1 className="text-lg font-semibold">Upload statement</h1>
         <div className="flex rounded-lg border border-slate-700 overflow-hidden text-sm">
           <button
             onClick={() => setTab("single")}
@@ -842,33 +777,63 @@ export default function Upload() {
 
       {tab === "bulk" ? (
         <BulkUpload
-          formats={formats}
+          templates={templates}
           onSwitchToSingle={() => setTab("single")}
         />
       ) : (
-        <div className="bg-slate-900 rounded-xl border border-slate-800 p-8 flex flex-col items-center gap-4 text-center">
-          <div className="w-12 h-12 rounded-full bg-slate-800 flex items-center justify-center text-xl">
-            📄
-          </div>
-          <div>
-            <p className="text-sm text-slate-300 font-medium">
-              Drop a PDF statement
-            </p>
-            <p className="text-xs text-slate-500 mt-1">
-              Any bank — column mapping is detected automatically
-            </p>
-          </div>
-          <label className="cursor-pointer bg-indigo-600 hover:bg-indigo-500 px-4 py-2 rounded-lg text-sm font-medium transition-colors">
-            Choose file
-            <input
-              ref={fileRef}
-              type="file"
-              accept=".pdf"
-              onChange={handleFile}
-              className="hidden"
+        <div className="space-y-4">
+          {/* Template selector */}
+          <div className="bg-slate-900 rounded-xl border border-slate-800 p-4 space-y-2">
+            <label className="text-xs text-slate-400 font-medium uppercase tracking-wide">
+              Template
+            </label>
+            <TemplateSelect
+              templates={templates}
+              value={selectedTemplateId}
+              onChange={setSelectedTemplateId}
+              placeholder="— None (auto-detect columns) —"
             />
-          </label>
-          {error && <p className="text-sm text-red-400">{error}</p>}
+            {templates.length === 0 && (
+              <p className="text-xs text-slate-500">
+                No templates yet.{" "}
+                <a
+                  href="/templates"
+                  className="text-indigo-400 hover:text-indigo-300"
+                >
+                  Create one
+                </a>{" "}
+                in the Templates section for reliable imports.
+              </p>
+            )}
+          </div>
+
+          {/* File picker */}
+          <div className="bg-slate-900 rounded-xl border border-slate-800 p-8 flex flex-col items-center gap-4 text-center">
+            <div className="w-12 h-12 rounded-full bg-slate-800 flex items-center justify-center text-xl">
+              📄
+            </div>
+            <div>
+              <p className="text-sm text-slate-300 font-medium">
+                Choose a PDF or CSV statement
+              </p>
+              <p className="text-xs text-slate-500 mt-1">
+                {selectedTemplateId
+                  ? `Template: ${templates.find((t) => t.id === selectedTemplateId)?.name}`
+                  : "Column mapping will be auto-detected"}
+              </p>
+            </div>
+            <label className="cursor-pointer bg-indigo-600 hover:bg-indigo-500 px-4 py-2 rounded-lg text-sm font-medium transition-colors">
+              Choose file
+              <input
+                ref={fileRef}
+                type="file"
+                accept=".pdf,.csv"
+                onChange={handleFile}
+                className="hidden"
+              />
+            </label>
+            {error && <p className="text-sm text-red-400">{error}</p>}
+          </div>
         </div>
       )}
     </div>

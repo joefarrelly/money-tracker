@@ -20,8 +20,9 @@ class Account(Base):
     __tablename__ = "accounts"
 
     id = Column(Integer, primary_key=True)
+    user_email = Column(String(255), nullable=True, index=True)
     bank = Column(String(50), nullable=False)
-    account_number = Column(String(50), nullable=False, unique=True)
+    account_number = Column(String(50), nullable=False)
     nickname = Column(String(100))
     created_at = Column(DateTime, default=datetime.utcnow)
 
@@ -71,6 +72,7 @@ class RecurringExpense(Base):
     __tablename__ = "recurring_expenses"
 
     id = Column(Integer, primary_key=True)
+    user_email = Column(String(255), nullable=True, index=True)
     merchant_pattern = Column(String(255), nullable=False)
     category_id = Column(Integer, ForeignKey("categories.id"), nullable=True)
     typical_amount = Column(Float, nullable=False)
@@ -93,7 +95,8 @@ class PersonIdentity(Base):
     __tablename__ = "person_identities"
 
     id = Column(Integer, primary_key=True)
-    ni_number = Column(String(20), unique=True, nullable=False)
+    user_email = Column(String(255), nullable=True, index=True)
+    ni_number = Column(String(20), nullable=False)
     display_name = Column(String(100), nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
 
@@ -102,6 +105,7 @@ class Salary(Base):
     __tablename__ = "salaries"
 
     id = Column(Integer, primary_key=True)
+    user_email = Column(String(255), nullable=True, index=True)
     date = Column(Date, nullable=False)
     gross_amount = Column(Float, nullable=True)
     net_amount = Column(Float, nullable=False)
@@ -137,6 +141,7 @@ class EmailImport(Base):
     __tablename__ = "email_imports"
 
     id = Column(Integer, primary_key=True)
+    user_email = Column(String(255), nullable=True, index=True)
     message_id = Column(String(500), unique=True, nullable=False)
     subject = Column(String(500))
     sender = Column(String(255))
@@ -153,42 +158,53 @@ class EmailImport(Base):
     imported_at = Column(DateTime)
 
 
-class StatementFormat(Base):
-    """
-    Saved column mapping for a bank statement format.
-    Built-in entries seed Barclays and Chase; users can save their own.
-    """
+class UserEmailConfig(Base):
+    __tablename__ = "user_email_configs"
 
-    __tablename__ = "statement_formats"
+    user_email = Column(String(255), primary_key=True)
+    app_password = Column(String(255), nullable=False)
+    label = Column(String(100), default="INBOX")
+    enabled = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow)
+
+
+class UserParserTemplate(Base):
+    """User-defined column mapping for parsing bank statements or payslips."""
+
+    __tablename__ = "user_parser_templates"
 
     id = Column(Integer, primary_key=True)
+    user_email = Column(String(255), nullable=False, index=True)
     name = Column(String(100), nullable=False)
+    template_type = Column(String(20), nullable=False)  # "statement" | "payslip"
+    file_type = Column(String(10), nullable=False, default="pdf")  # "pdf" | "csv"
 
-    # Raw column header strings as they appear in the PDF (used for auto-matching)
-    column_headers = Column(JSON, nullable=False)
+    # Which extracted table to use (0-based; None = auto-select best)
+    table_index = Column(Integer, nullable=True)
 
-    # Column indices (0-based) for each role
-    date_col = Column(Integer, nullable=False)
-    description_col = Column(Integer, nullable=False)
+    # Column headers from the sample file, stored for display in the editor
+    column_headers = Column(JSON, nullable=True)
+
+    # Column role assignments (0-based indices)
+    date_col = Column(Integer, nullable=True)
+    description_col = Column(Integer, nullable=True)
+    date_description_col = Column(Integer, nullable=True)
     balance_col = Column(Integer, nullable=True)
+    # "split" = separate money_in / money_out columns; "signed" = single signed column
+    amount_style = Column(String(10), nullable=False, default="signed")
+    amount_col = Column(Integer, nullable=True)
+    money_in_col = Column(Integer, nullable=True)
+    money_out_col = Column(Integer, nullable=True)
+    date_format = Column(String(30), nullable=True, default="%d %b %Y")
+    year_source = Column(String(20), nullable=True, default="inline")
 
-    # "split" = separate money_in / money_out columns (e.g. Barclays)
-    # "signed" = single amount column with +/- prefix (e.g. Chase)
-    amount_style = Column(String(10), nullable=False)
-    amount_col = Column(Integer, nullable=True)  # for "signed"
-    money_in_col = Column(Integer, nullable=True)  # for "split"
-    money_out_col = Column(Integer, nullable=True)  # for "split"
-    date_description_col = Column(
-        Integer, nullable=True
-    )  # merged date+description column
+    # Description substrings that cause a row to be skipped (e.g. "Opening balance")
+    skip_patterns = Column(JSON, nullable=False, default=list)
 
-    # Date parsing
-    date_format = Column(String(30), nullable=False)  # e.g. "%d %b" or "%d %b %Y"
-    year_source = Column(
-        String(20), nullable=False, default="inline"
-    )  # "inline"|"detect"|"manual"
+    # Payslip only: keyword in a row that marks the start of the deductions section.
+    # Rows after a row containing this keyword are classified as deductions regardless
+    # of sign. Mirrors the NordHealth "TOTAL" boundary row behaviour.
+    deduction_boundary_keyword = Column(String(100), nullable=True)
 
-    is_builtin = Column(Boolean, default=False)
-    use_count = Column(Integer, default=0)
-    last_used_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)

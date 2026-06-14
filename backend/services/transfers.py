@@ -5,20 +5,24 @@ account-to-account transfers (same amount, different accounts, within ±2 days).
 
 from sqlalchemy.orm import Session, joinedload
 
-from models import Transaction
+from models import Account, Transaction
 
 
-def detect_transfers(db: Session) -> list[dict]:
+def detect_transfers(db: Session, user_email: str) -> list[dict]:
     """
-    Find candidate transfer pairs among unreviewed transactions.
+    Find candidate transfer pairs among unreviewed transactions for the given user.
     A candidate is a negative transaction on one account paired with a positive
     transaction of the same amount on a different account within ±2 days.
     """
+    user_account_ids = {
+        row.id for row in db.query(Account.id).filter_by(user_email=user_email).all()
+    }
     txns = (
         db.query(Transaction)
         .filter(
             Transaction.is_transfer == False,  # noqa: E712
             Transaction.transfer_ignored == False,  # noqa: E712
+            Transaction.account_id.in_(user_account_ids),
         )
         .options(joinedload(Transaction.account))
         .order_by(Transaction.date)
@@ -35,7 +39,6 @@ def detect_transfers(db: Session) -> list[dict]:
         for pos in positives:
             if neg.account_id == pos.account_id:
                 continue
-            # Amount match within £0.02 (rounding differences between banks)
             if abs(abs(neg.amount) - abs(pos.amount)) > 0.02:
                 continue
             day_diff = abs((neg.date - pos.date).days)
@@ -47,7 +50,6 @@ def detect_transfers(db: Session) -> list[dict]:
                 continue
             seen_pairs.add(pair_key)
 
-            # Confidence: 1.0 for same-day exact match, lower for day gaps or rounding
             amount_delta = abs(abs(neg.amount) - abs(pos.amount))
             confidence = round(
                 1.0
