@@ -12,3 +12,4 @@ build/
 *.sqlite
 *.sqlite3
 node_modules/
+.claude/settings.local.json
